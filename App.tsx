@@ -10,6 +10,7 @@ import { LoginScreen } from "./src/screens/LoginScreen";
 import { MySleepScreen } from "./src/screens/MySleepScreen";
 import { FriendsScreen } from "./src/screens/FriendsScreen";
 import { LeaderboardScreen } from "./src/screens/LeaderboardScreen";
+import { ProfileScreen } from "./src/screens/ProfileScreen"; // ⬅️ add this import
 
 type RootStackParamList = {
   Auth: undefined;
@@ -36,6 +37,11 @@ function MainTabs() {
         name="Leaderboard"
         component={LeaderboardScreen}
         options={{ title: "Leaderboard" }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{ title: "Profile" }}
       />
     </Tab.Navigator>
   );

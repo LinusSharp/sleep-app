@@ -11,6 +11,8 @@ import { MySleepScreen } from "./src/screens/MySleepScreen";
 import { FriendsScreen } from "./src/screens/FriendsScreen";
 import { LeaderboardScreen } from "./src/screens/LeaderboardScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen"; // ⬅️ add this import
+import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 type RootStackParamList = {
   Auth: undefined;
@@ -20,9 +22,49 @@ type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
 
+const tabColors = {
+  background: "#FFFFFF",
+  border: "#D0D4E6",
+  active: "#1E2554",
+  inactive: "#9CA3AF",
+};
+
 function MainTabs() {
   return (
-    <Tab.Navigator screenOptions={{ headerShown: true }}>
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false, // let each screen handle its own top section
+        tabBarShowLabel: true,
+        tabBarActiveTintColor: tabColors.active,
+        tabBarInactiveTintColor: tabColors.inactive,
+        tabBarStyle: {
+          backgroundColor: tabColors.background,
+          borderTopColor: tabColors.border,
+          borderTopWidth: 1,
+          height: 64,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          marginBottom: 4,
+        },
+        tabBarIcon: ({ color, size, focused }) => {
+          let iconName: keyof typeof Ionicons.glyphMap;
+
+          if (route.name === "MySleep") {
+            iconName = focused ? "moon" : "moon-outline";
+          } else if (route.name === "Friends") {
+            iconName = focused ? "people" : "people-outline";
+          } else if (route.name === "Leaderboard") {
+            iconName = focused ? "trophy" : "trophy-outline";
+          } else {
+            // Profile
+            iconName = focused ? "person" : "person-outline";
+          }
+
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+      })}
+    >
       <Tab.Screen
         name="MySleep"
         component={MySleepScreen}
@@ -70,8 +112,8 @@ export default function App() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator />
+      <View>
+        <ActivityIndicator color="#1E2554" />
       </View>
     );
   }
@@ -90,5 +132,12 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  safeArea: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 12, // slight extra padding now that safe area is handled
+  },
 });

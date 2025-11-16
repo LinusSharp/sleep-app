@@ -237,7 +237,7 @@ export const ProfileScreen: React.FC = () => {
         </Pressable>
       </View>
 
-      <View style={styles.footer}>
+      <View style={{ marginBottom: 16 }}>
         <Pressable style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutText}>Log out</Text>
         </Pressable>

@@ -77,7 +77,7 @@ export const LeaderboardScreen: React.FC = () => {
       }
       setMyUserId(userData.user.id);
 
-      const res = await apiGet("/leaderboard?days=7");
+      const res = await apiGet("/leaderboard");
       const lb = (res.leaderboards || {}) as Partial<Leaderboards>;
 
       setLeaderboards({
@@ -122,7 +122,7 @@ export const LeaderboardScreen: React.FC = () => {
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.title}>Leaderboard</Text>
-          <Text style={styles.subtitle}>Last 7 days</Text>
+          <Text style={styles.subtitle}>This work week (Sun–Thu nights)</Text>
         </View>
       </View>
       {/* Tabs */}

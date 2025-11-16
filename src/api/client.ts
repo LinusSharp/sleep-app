@@ -1,6 +1,13 @@
 import { supabase } from "../lib/supabase";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000";
+// Change this to your laptop's LAN IP for local dev
+const DEV_API_URL = "http://127.0.0.1:4000"; // <-- update the IP
+
+// Production URL: Railway
+const PROD_API_URL = "https://sleep-api-production.up.railway.app";
+
+// Expo sets __DEV__ = true in development builds
+const API_URL = PROD_API_URL;
 
 async function getAccessToken() {
   const { data } = await supabase.auth.getSession();

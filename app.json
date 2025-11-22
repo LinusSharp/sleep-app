@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.linussharp.slumberleague",
-      "buildNumber": "1",
+      "buildNumber": "11",
       "userInterfaceStyle": "dark",
       "infoPlist": {
         "NSHealthShareUsageDescription": "SlumberLeague needs to read your sleep data to calculate your leaderboard score.",

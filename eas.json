@@ -1,0 +1,27 @@
+{
+  "cli": {
+    "version": ">= 14.4.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "autoIncrement": true,
+      "distribution": "store",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://sleep-api-production.up.railway.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://xoebnpamcxgtrjhqzzbn.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_R6Cu_J5ZgfVv81Hc42sx4w_OKCwyzEz"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

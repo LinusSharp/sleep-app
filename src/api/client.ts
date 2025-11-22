@@ -7,7 +7,9 @@ const DEV_API_URL = "http://127.0.0.1:4000"; // <-- update the IP
 const PROD_API_URL = "https://sleep-api-production.up.railway.app";
 
 // Expo sets __DEV__ = true in development builds
-const API_URL = PROD_API_URL;
+const API_URL =
+  process.env.EXPO_PUBLIC_API_URL ??
+  "https://sleep-api-production.up.railway.app";
 
 async function getAccessToken() {
   const { data } = await supabase.auth.getSession();

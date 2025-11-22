@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "sleep-app",
-    "slug": "sleep-app",
+    "name": "SlumberLeague",
+    "slug": "slumberleague",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,7 +13,9 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.linussharp.slumberleague",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +27,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e87b0838-bd5e-4a25-a5a9-05b71c97215d"
+      }
     }
   }
 }

@@ -1,12 +1,23 @@
+import { NativeModules, Platform } from "react-native";
 import AppleHealthKit, {
   HealthKitPermissions,
   HealthValue,
 } from "react-native-health";
-import { Platform } from "react-native";
+
+// --- DEBUG LOGGING ---
+console.log("--------------------------------------");
+console.log("DEBUG: Checking Native Modules...");
+if (NativeModules.AppleHealthKit) {
+  console.log("DEBUG: NativeModules.AppleHealthKit EXISTS ✅");
+} else {
+  console.log("DEBUG: NativeModules.AppleHealthKit is MISSING ❌");
+  console.log("DEBUG: Available Modules:", Object.keys(NativeModules));
+}
+// ---------------------
 
 const permissions: HealthKitPermissions = {
   permissions: {
-    read: [AppleHealthKit.Constants.Permissions.SleepAnalysis],
+    read: [AppleHealthKit?.Constants?.Permissions?.SleepAnalysis || 0], // Safe access
     write: [],
   },
 };
@@ -18,20 +29,30 @@ export const initHealthKit = (): Promise<void> => {
       return;
     }
 
-    // Basic check to see if the native module is linked
-    if (!AppleHealthKit || !AppleHealthKit.initHealthKit) {
+    // 1. Direct Native Module Check (The most reliable check)
+    if (!NativeModules.AppleHealthKit) {
       reject(
         new Error(
-          "HealthKit native module is not loaded. Please reinstall the app."
+          "HealthKit native module is NOT installed in this build. Are you in Expo Go?"
         )
       );
       return;
     }
 
-    AppleHealthKit.initHealthKit(permissions, (error: string) => {
+    // 2. Initialize
+    // Sometimes the import is 'AppleHealthKit.default', so we try both
+    const HK = AppleHealthKit;
+
+    if (!HK || !HK.initHealthKit) {
+      reject(new Error("HealthKit JS object is empty. Check imports."));
+      return;
+    }
+
+    HK.initHealthKit(permissions, (error: string) => {
       if (error) {
         reject(new Error(error));
       } else {
+        console.log("DEBUG: HealthKit Initialized Successfully!");
         resolve();
       }
     });

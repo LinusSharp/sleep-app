@@ -16,7 +16,14 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.linussharp.slumberleague",
       "buildNumber": "1",
-      "userInterfaceStyle": "dark"
+      "userInterfaceStyle": "dark",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "SlumberLeague needs to read your sleep data to calculate your leaderboard score.",
+        "NSHealthUpdateUsageDescription": "SlumberLeague needs to update your sleep data."
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -32,6 +39,7 @@
       "eas": {
         "projectId": "e87b0838-bd5e-4a25-a5a9-05b71c97215d"
       }
-    }
+    },
+    "plugins": ["react-native-health"]
   }
 }

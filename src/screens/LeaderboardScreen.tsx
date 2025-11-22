@@ -7,10 +7,18 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  Pressable,
+  Modal,
+  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { apiGet } from "../api/client";
 import { supabase } from "../lib/supabase";
+import { theme } from "../theme";
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+
+// --- Types ---
 
 type LeaderboardUser = {
   userId: string;
@@ -19,6 +27,7 @@ type LeaderboardUser = {
   totalSleepMinutes: number;
   remSleepMinutes: number;
   deepSleepMinutes: number;
+  nightsLogged: number;
 };
 
 type LeaderboardKey = "survivalist" | "tomRemmer" | "rollingInTheDeep";
@@ -29,55 +38,78 @@ type Leaderboards = {
   rollingInTheDeep: LeaderboardUser[];
 };
 
-const WORK_NIGHTS_PER_WEEK = 5;
-
-const colors = {
-  background: "#F4F5FB",
-  surface: "#FFFFFF",
-  surfaceMuted: "#EEF1FF",
-  primary: "#1E2554",
-  primaryLight: "#3C4AA8",
-  accent: "#FFB347",
-  textPrimary: "#111827",
-  textSecondary: "#6B7280",
-  border: "#D0D4E6",
-  error: "#E53935",
-};
+// --- Helpers ---
 
 function minutesToHours(mins: number) {
   return Math.round((mins / 60) * 10) / 10;
 }
 
+function getRankStyle(rank: number) {
+  if (rank === 1)
+    return {
+      color: "#FBBF24",
+      bg: "rgba(251, 191, 36, 0.10)",
+      border: "#FBBF24",
+      icon: "trophy",
+    }; // Gold
+  if (rank === 2)
+    return {
+      color: "#E2E8F0",
+      bg: "rgba(226, 232, 240, 0.10)",
+      border: "#94A3B8",
+      icon: "medal",
+    }; // Silver
+  if (rank === 3)
+    return {
+      color: "#B45309",
+      bg: "rgba(180, 83, 9, 0.10)",
+      border: "#B45309",
+      icon: "medal-outline",
+    }; // Bronze
+  return {
+    color: theme.colors.textSecondary,
+    bg: theme.colors.surface,
+    border: theme.colors.border,
+    icon: null,
+  }; // Standard
+}
+
+// --- Component ---
+
 export const LeaderboardScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
 
+  // State
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<string | null>(null);
 
+  // Data
   const [leaderboards, setLeaderboards] = useState<Leaderboards | null>(null);
+
+  // Controls
+  const [scope, setScope] = useState<"friends" | "clan">("friends");
   const [selectedBoard, setSelectedBoard] =
     useState<LeaderboardKey>("survivalist");
+  const [infoVisible, setInfoVisible] = useState(false);
 
   async function loadLeaderboard(options?: { refresh?: boolean }) {
     const refresh = options?.refresh ?? false;
-    if (refresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
+    if (refresh) setRefreshing(true);
+    else setLoading(true);
     setError(null);
 
     try {
       const { data: userData, error: userError } =
         await supabase.auth.getUser();
-      if (userError || !userData.user) {
-        throw new Error("No auth user");
-      }
+      if (userError || !userData.user) throw new Error("No auth user");
       setMyUserId(userData.user.id);
 
-      const res = await apiGet("/leaderboard");
+      // Pass the scope (friends vs clan) to the backend
+      const res = await apiGet(`/leaderboard?scope=${scope}`);
+
       const lb = (res.leaderboards || {}) as Partial<Leaderboards>;
 
       setLeaderboards({
@@ -86,58 +118,126 @@ export const LeaderboardScreen: React.FC = () => {
         rollingInTheDeep: lb.rollingInTheDeep ?? [],
       });
     } catch (e: any) {
-      setError(e.message);
+      console.log(e);
+      // Don't show error on UI for empty clan, just handle via list empty state
     } finally {
-      if (refresh) {
-        setRefreshing(false);
-      } else {
-        setLoading(false);
-      }
+      if (refresh) setRefreshing(false);
+      else setLoading(false);
     }
   }
+
+  // Reload when scope changes
+  useEffect(() => {
+    loadLeaderboard();
+  }, [scope]);
 
   const rows = useMemo<LeaderboardUser[]>(() => {
     if (!leaderboards) return [];
     return leaderboards[selectedBoard] ?? [];
   }, [leaderboards, selectedBoard]);
+
   const myRowInfo = useMemo(() => {
     if (!myUserId || rows.length === 0) return null;
     const index = rows.findIndex((r) => r.userId === myUserId);
     if (index === -1) return null;
     const row = rows[index];
+
+    // Determine value based on board
+    let val = 0;
+    if (selectedBoard === "survivalist") val = row.totalSleepMinutes;
+    else if (selectedBoard === "tomRemmer") val = row.remSleepMinutes;
+    else val = row.deepSleepMinutes;
+
     return {
       rank: index + 1,
-      totalHours: minutesToHours(row.totalSleepMinutes),
-      avgPerNight: minutesToHours(row.totalSleepMinutes / WORK_NIGHTS_PER_WEEK),
+      value: minutesToHours(val),
+      nights: row.nightsLogged,
     };
-  }, [rows, myUserId]);
+  }, [rows, myUserId, selectedBoard]);
 
-  useEffect(() => {
-    loadLeaderboard();
-  }, []);
+  // --- Renderers ---
 
-  return (
-    <View style={[styles.container, { paddingTop: 12 + insets.top }]}>
-      {/* Header */}
-      <View style={styles.headerRow}>
+  const renderHeader = () => (
+    <View style={styles.headerContainer}>
+      <View style={styles.headerTop}>
         <View>
           <Text style={styles.title}>Leaderboard</Text>
-          <Text style={styles.subtitle}>This work week (Sun–Thu nights)</Text>
+          <Text style={styles.subtitle}>Weekly Competition (Mon-Sun)</Text>
         </View>
-      </View>
-      {/* Tabs */}
-      <View style={styles.tabsRow}>
         <TouchableOpacity
+          onPress={() => setInfoVisible(true)}
+          style={styles.infoButton}
+        >
+          <Ionicons
+            name="information-circle-outline"
+            size={24}
+            color={theme.colors.primary}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* Scope Switcher */}
+      <View style={styles.scopeContainer}>
+        <Pressable
           style={[
-            styles.tabButton,
-            selectedBoard === "survivalist" && styles.tabButtonActive,
+            styles.scopeBtn,
+            scope === "friends" && styles.scopeBtnActive,
           ]}
-          onPress={() => setSelectedBoard("survivalist")}
+          onPress={() => setScope("friends")}
         >
           <Text
             style={[
-              styles.tabLabel,
-              selectedBoard === "survivalist" && styles.tabLabelActive,
+              styles.scopeText,
+              scope === "friends" && styles.scopeTextActive,
+            ]}
+          >
+            Friends
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.scopeBtn, scope === "clan" && styles.scopeBtnActive]}
+          onPress={() => setScope("clan")}
+        >
+          <Text
+            style={[
+              styles.scopeText,
+              scope === "clan" && styles.scopeTextActive,
+            ]}
+          >
+            Clan
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  const renderCategories = () => (
+    <View style={styles.catScroll}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.catContainer}
+      >
+        <TouchableOpacity
+          style={[
+            styles.catCard,
+            selectedBoard === "survivalist" && styles.catCardActive,
+          ]}
+          onPress={() => setSelectedBoard("survivalist")}
+        >
+          <Ionicons
+            name="battery-charging-outline"
+            size={18}
+            color={
+              selectedBoard === "survivalist"
+                ? "#FFF"
+                : theme.colors.textSecondary
+            }
+          />
+          <Text
+            style={[
+              styles.catText,
+              selectedBoard === "survivalist" && styles.catTextActive,
             ]}
           >
             Survivalist
@@ -146,149 +246,316 @@ export const LeaderboardScreen: React.FC = () => {
 
         <TouchableOpacity
           style={[
-            styles.tabButton,
-            selectedBoard === "tomRemmer" && styles.tabButtonActive,
+            styles.catCard,
+            selectedBoard === "tomRemmer" && styles.catCardActive,
           ]}
           onPress={() => setSelectedBoard("tomRemmer")}
         >
+          <Ionicons
+            name="flash-outline"
+            size={18}
+            color={
+              selectedBoard === "tomRemmer"
+                ? "#FFF"
+                : theme.colors.textSecondary
+            }
+          />
           <Text
             style={[
-              styles.tabLabel,
-              selectedBoard === "tomRemmer" && styles.tabLabelActive,
+              styles.catText,
+              selectedBoard === "tomRemmer" && styles.catTextActive,
             ]}
           >
-            Tom Remmer
+            Tom REM-er
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[
-            styles.tabButton,
-            selectedBoard === "rollingInTheDeep" && styles.tabButtonActive,
+            styles.catCard,
+            selectedBoard === "rollingInTheDeep" && styles.catCardActive,
           ]}
           onPress={() => setSelectedBoard("rollingInTheDeep")}
         >
+          <Ionicons
+            name="bed-outline"
+            size={18}
+            color={
+              selectedBoard === "rollingInTheDeep"
+                ? "#FFF"
+                : theme.colors.textSecondary
+            }
+          />
           <Text
             style={[
-              styles.tabLabel,
-              selectedBoard === "rollingInTheDeep" && styles.tabLabelActive,
+              styles.catText,
+              selectedBoard === "rollingInTheDeep" && styles.catTextActive,
             ]}
           >
-            Rolling in the deep
+            Rolling Deep
           </Text>
         </TouchableOpacity>
-      </View>
-      {loading && (
-        <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
-      )}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      </ScrollView>
+    </View>
+  );
 
-      {/* Your position card */}
-      {myRowInfo && (
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Your position</Text>
-          <View style={styles.cardTopRow}>
-            <View>
-              <Text style={styles.rankBig}>#{myRowInfo.rank}</Text>
-              <Text style={styles.rankSub}>out of {rows.length}</Text>
-            </View>
-            <View style={styles.cardMetricsRight}>
-              <Text style={styles.cardMetric}>
-                {myRowInfo.totalHours} h total
-              </Text>
-              <Text style={styles.cardMetricSub}>
-                Avg {myRowInfo.avgPerNight} h / night
-              </Text>
-            </View>
+  const renderMyRank = () => {
+    if (!myRowInfo) return null;
+    const style = getRankStyle(myRowInfo.rank);
+
+    return (
+      <View
+        style={[
+          styles.myRankCard,
+          { borderColor: style.border, borderWidth: 1 },
+        ]}
+      >
+        <View style={styles.myRankLeft}>
+          <View style={styles.myRankBadge}>
+            <Text style={styles.myRankLabel}>YOUR RANK</Text>
+            <Text
+              style={[
+                styles.myRankBig,
+                {
+                  color:
+                    myRowInfo.rank <= 3
+                      ? style.color
+                      : theme.colors.textPrimary,
+                },
+              ]}
+            >
+              #{myRowInfo.rank}
+            </Text>
+          </View>
+          <View style={{ marginLeft: 16 }}>
+            <Text style={styles.myRankName}>You</Text>
+            <Text style={styles.myRankSub}>
+              {myRowInfo.nights} nights logged
+            </Text>
           </View>
         </View>
+        <View>
+          <Text style={styles.myRankValue}>{myRowInfo.value}h</Text>
+          <Text style={styles.myRankUnit}>Total</Text>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <View style={[styles.container, { paddingTop: 12 + insets.top }]}>
+      {renderHeader()}
+      {renderCategories()}
+
+      {loading && !refreshing && (
+        <ActivityIndicator
+          color={theme.colors.primary}
+          style={{ marginTop: 20 }}
+        />
       )}
 
-      {/* List */}
       <FlatList
-        style={{ marginTop: 12 }}
         data={rows}
         keyExtractor={(item) => item.userId}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 32, paddingTop: 8 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => loadLeaderboard({ refresh: true })}
+            tintColor={theme.colors.primary}
           />
         }
+        ListHeaderComponent={renderMyRank}
         renderItem={({ item, index }) => {
           const isMe = item.userId === myUserId;
           const name = item.displayName || item.email || "Unknown";
-
           const rank = index + 1;
-          let badgeColor: string | null = null;
-          if (rank === 1) badgeColor = "#FACC15"; // gold
-          if (rank === 2) badgeColor = "#E5E7EB"; // silver
-          if (rank === 3) badgeColor = "#FDBA74"; // bronze
+          const style = getRankStyle(rank);
+
+          let value = 0;
+          if (selectedBoard === "survivalist") value = item.totalSleepMinutes;
+          else if (selectedBoard === "tomRemmer") value = item.remSleepMinutes;
+          else value = item.deepSleepMinutes;
 
           return (
-            <View style={[styles.row, isMe && styles.meRow]}>
-              <View style={styles.left}>
-                <View style={styles.rankBadgeWrapper}>
-                  <View
+            <View
+              style={[
+                styles.row,
+                {
+                  borderColor: isMe ? theme.colors.primary : style.border,
+                  backgroundColor: style.bg,
+                },
+              ]}
+            >
+              <View style={styles.rowLeft}>
+                <View
+                  style={[
+                    styles.rankBadge,
+                    {
+                      backgroundColor:
+                        rank <= 3 ? style.color : theme.colors.surfaceHighlight,
+                    },
+                  ]}
+                >
+                  <Text
                     style={[
-                      styles.rankBadge,
-                      badgeColor && { backgroundColor: badgeColor },
+                      styles.rankText,
+                      {
+                        color: rank <= 3 ? "#000" : theme.colors.textSecondary,
+                      },
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.rankText,
-                        badgeColor && { color: "#111827" },
-                      ]}
-                    >
-                      {rank}
-                    </Text>
-                  </View>
+                    {rank}
+                  </Text>
                 </View>
                 <View>
-                  <Text style={[styles.name, isMe && styles.meName]}>
-                    {name}
+                  <Text
+                    style={[
+                      styles.rowName,
+                      isMe && { color: theme.colors.primary },
+                    ]}
+                  >
+                    {name} {isMe && "(You)"}
                   </Text>
-                  <View style={styles.tagRow}>
-                    {isMe && <Text style={styles.meTag}>You</Text>}
-                    {badgeColor && (
-                      <Text style={styles.positionTag}>
-                        {rank === 1
-                          ? selectedBoard === "survivalist"
-                            ? "Top survivalist"
-                            : selectedBoard === "tomRemmer"
-                            ? "Top REM"
-                            : "Top deep"
-                          : rank === 2
-                          ? "2nd place"
-                          : "3rd place"}
-                      </Text>
-                    )}
-                  </View>
+                  {rank === 1 && (
+                    <View style={styles.crownBadge}>
+                      <Ionicons
+                        name="trophy"
+                        size={10}
+                        color={theme.colors.accent}
+                      />
+                      <Text style={styles.crownText}>LEADER</Text>
+                    </View>
+                  )}
                 </View>
               </View>
 
-              <View style={styles.metrics}>
-                <Text style={styles.metric}>
-                  {minutesToHours(item.totalSleepMinutes)} h total
-                </Text>
-                <Text style={styles.metricSmall}>
-                  REM {minutesToHours(item.remSleepMinutes)} h · Deep{" "}
-                  {minutesToHours(item.deepSleepMinutes)} h
+              <View style={styles.rowRight}>
+                <Text style={styles.rowValue}>
+                  {minutesToHours(value)} <Text style={styles.rowUnit}>h</Text>
                 </Text>
               </View>
             </View>
           );
         }}
         ListEmptyComponent={
-          !loading && !error ? (
-            <Text style={styles.emptyText}>
-              No data yet. Sleep a few nights and add friends.
-            </Text>
+          !loading ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons
+                name={scope === "clan" ? "shield-outline" : "people-outline"}
+                size={48}
+                color={theme.colors.textTertiary}
+              />
+              <Text style={styles.emptyText}>No data found.</Text>
+              <Text style={styles.emptySubText}>
+                {scope === "clan"
+                  ? "You might not be in a clan, or no one has slept yet."
+                  : "Add friends or log sleep to see rankings."}
+              </Text>
+              {scope === "clan" && (
+                <TouchableOpacity
+                  onPress={() => navigation.navigate("Friends")}
+                  style={styles.joinClanBtn}
+                >
+                  <Text style={styles.joinClanText}>Find a Clan</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           ) : null
         }
       />
+
+      {/* --- INFO MODAL --- */}
+      <Modal
+        visible={infoVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInfoVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>How it Works</Text>
+              <TouchableOpacity onPress={() => setInfoVisible(false)}>
+                <Ionicons
+                  name="close"
+                  size={24}
+                  color={theme.colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 400 }}>
+              <Text style={styles.modalSectionTitle}>Categories</Text>
+
+              <View style={styles.infoRow}>
+                <Ionicons
+                  name="battery-charging-outline"
+                  size={20}
+                  color={theme.colors.primary}
+                />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.infoRowTitle}>Survivalist</Text>
+                  <Text style={styles.infoRowDesc}>
+                    Whoever functions on the LEAST amount of sleep. Total
+                    duration sorted ascending.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.infoRow}>
+                <Ionicons
+                  name="flash-outline"
+                  size={20}
+                  color={theme.colors.primary}
+                />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.infoRowTitle}>Tom REM-er</Text>
+                  <Text style={styles.infoRowDesc}>
+                    Who has the most vivid dreams? Total REM sleep sorted
+                    descending.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.infoRow}>
+                <Ionicons
+                  name="bed-outline"
+                  size={20}
+                  color={theme.colors.primary}
+                />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.infoRowTitle}>Rolling in the Deep</Text>
+                  <Text style={styles.infoRowDesc}>
+                    Physical recovery king. Total Deep sleep sorted descending.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.divider} />
+
+              <Text style={styles.modalSectionTitle}>Rules & Anti-Cheat</Text>
+              <Text style={styles.ruleText}>
+                • Competition runs Monday to Sunday.
+              </Text>
+              <Text style={styles.ruleText}>
+                • You must log at least 45 mins for a session to count.
+              </Text>
+              <Text style={styles.ruleText}>
+                • For "Survivalist", you must have logged at least one night
+                this week to qualify.
+              </Text>
+            </ScrollView>
+
+            <Pressable
+              style={styles.modalCloseBtn}
+              onPress={() => setInfoVisible(false)}
+            >
+              <Text style={styles.modalCloseText}>Got it</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -297,181 +564,307 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 24,
-    backgroundColor: colors.background,
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: colors.primary,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  error: {
-    color: colors.error,
-    marginTop: 8,
-    fontSize: 13,
+    backgroundColor: theme.colors.background,
   },
 
-  // Your position card
-  card: {
-    backgroundColor: colors.surface,
+  // Header
+  headerContainer: {
+    marginBottom: 12,
+  },
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: theme.colors.textPrimary,
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
+  },
+  infoButton: {
+    padding: 4,
+  },
+
+  // Scope Switcher
+  scopeContainer: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.surface,
+    borderRadius: 12,
+    padding: 4,
+  },
+  scopeBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: "center",
+    borderRadius: 8,
+  },
+  scopeBtnActive: {
+    backgroundColor: theme.colors.surfaceHighlight,
+  },
+  scopeText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: theme.colors.textSecondary,
+  },
+  scopeTextActive: {
+    color: theme.colors.textPrimary,
+  },
+
+  // Categories
+  catScroll: {
+    marginBottom: 16,
+    marginHorizontal: -24, // break container padding
+  },
+  catContainer: {
+    paddingHorizontal: 24,
+    gap: 10,
+  },
+  catCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.surface,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  catCardActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  catText: {
+    marginLeft: 6,
+    fontSize: 13,
+    fontWeight: "600",
+    color: theme.colors.textSecondary,
+  },
+  catTextActive: {
+    color: "#FFFFFF",
+  },
+
+  // My Rank
+  myRankCard: {
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  cardLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 6,
-  },
-  cardTopRow: {
+    marginBottom: 24,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
   },
-  rankBig: {
-    fontSize: 26,
+  myRankLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  myRankBadge: {
+    alignItems: "center",
+  },
+  myRankLabel: {
+    fontSize: 10,
     fontWeight: "700",
-    color: colors.textPrimary,
+    color: theme.colors.textTertiary,
+    marginBottom: 2,
   },
-  rankSub: {
+  myRankBig: {
+    fontSize: 24,
+    fontWeight: "800",
+  },
+  myRankName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.colors.textPrimary,
+  },
+  myRankSub: {
     fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
+    color: theme.colors.textSecondary,
   },
-  cardMetricsRight: {
-    alignItems: "flex-end",
+  myRankValue: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: theme.colors.textPrimary,
+    textAlign: "right",
   },
-  cardMetric: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textPrimary,
-  },
-  cardMetricSub: {
+  myRankUnit: {
     fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
+    color: theme.colors.textTertiary,
+    textAlign: "right",
   },
 
-  // List rows
+  // List Item
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    marginBottom: 8,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.border,
   },
-  meRow: {
-    borderColor: colors.primaryLight,
-  },
-  left: {
+  rowLeft: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
   },
-  rankBadgeWrapper: {
-    marginRight: 10,
-  },
   rankBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.surfaceMuted,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
+    marginRight: 12,
   },
   rankText: {
     fontSize: 14,
-    fontWeight: "700",
-    color: colors.primary,
+    fontWeight: "800",
   },
-  name: {
-    fontSize: 14,
+  rowName: {
+    fontSize: 15,
     fontWeight: "600",
-    color: colors.textPrimary,
+    color: theme.colors.textPrimary,
   },
-  meName: {
-    color: colors.primaryLight,
-  },
-  tagRow: {
+  crownBadge: {
     flexDirection: "row",
+    alignItems: "center",
     marginTop: 2,
   },
-  meTag: {
-    fontSize: 11,
-    color: colors.primaryLight,
-    marginRight: 8,
+  crownText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: theme.colors.accent,
+    marginLeft: 4,
   },
-  positionTag: {
-    fontSize: 11,
-    color: colors.textSecondary,
-  },
-  metrics: {
+  rowRight: {
     alignItems: "flex-end",
-    marginLeft: 12,
   },
-  metric: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textPrimary,
+  rowValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.colors.textPrimary,
   },
-  metricSmall: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 2,
+  rowUnit: {
+    fontSize: 12,
+    fontWeight: "400",
+    color: theme.colors.textTertiary,
+  },
+
+  // Empty State
+  emptyContainer: {
+    alignItems: "center",
+    marginTop: 40,
+    padding: 20,
   },
   emptyText: {
-    fontSize: 13,
-    color: colors.textSecondary,
+    fontSize: 16,
+    fontWeight: "600",
+    color: theme.colors.textSecondary,
     marginTop: 12,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: theme.colors.textTertiary,
+    marginTop: 4,
     textAlign: "center",
   },
-  tabsRow: {
-    flexDirection: "row",
-    marginBottom: 8,
-    marginTop: 4,
-    backgroundColor: colors.surface,
+  joinClanBtn: {
+    marginTop: 16,
+    backgroundColor: theme.colors.surfaceHighlight,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
     borderRadius: 999,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 6,
-    borderRadius: 999,
-    alignItems: "center",
-  },
-  tabButtonActive: {
-    backgroundColor: colors.surfaceMuted,
-  },
-  tabLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    fontWeight: "500",
-  },
-  tabLabelActive: {
-    color: colors.primary,
+  joinClanText: {
+    color: theme.colors.primary,
     fontWeight: "600",
+  },
+
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: theme.colors.surface,
+    width: "100%",
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: theme.colors.textPrimary,
+  },
+  modalSectionTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: theme.colors.textTertiary,
+    textTransform: "uppercase",
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  infoRow: {
+    flexDirection: "row",
+    marginBottom: 16,
+  },
+  infoRowTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: theme.colors.textPrimary,
+    marginBottom: 2,
+  },
+  infoRowDesc: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    lineHeight: 18,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: theme.colors.border,
+    marginVertical: 12,
+  },
+  ruleText: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    marginBottom: 8,
+  },
+  modalCloseBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  modalCloseText: {
+    color: "#FFF",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  error: {
+    color: theme.colors.error,
+    marginBottom: 10,
+    textAlign: "center",
   },
 });

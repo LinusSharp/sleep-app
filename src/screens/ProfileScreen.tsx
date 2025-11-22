@@ -8,10 +8,17 @@ import {
   ActivityIndicator,
   Pressable,
   Linking,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 import { apiGet, apiPost } from "../api/client";
+import { theme } from "../theme";
+import { Ionicons } from "@expo/vector-icons";
+
+// --- Types ---
 
 type Profile = {
   id: string;
@@ -19,25 +26,15 @@ type Profile = {
   displayName: string | null;
 };
 
-const colors = {
-  background: "#F4F5FB",
-  surface: "#FFFFFF",
-  surfaceMuted: "#EEF1FF",
-  primary: "#1E2554",
-  primaryLight: "#3C4AA8",
-  accent: "#FFB347",
-  textPrimary: "#111827",
-  textSecondary: "#6B7280",
-  border: "#D0D4E6",
-  error: "#E53935",
-};
-
 const SUPPORT_EMAIL = "support@sleepleague.app"; // change to your real address
 const PRIVACY_URL = "https://your-site.com/privacy"; // your real URL
+
+// --- Component ---
 
 export const ProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
 
+  // State
   const [authEmail, setAuthEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -46,14 +43,15 @@ export const ProfileScreen: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // --- Logic ---
+
   async function loadProfile() {
     setLoading(true);
     try {
       const { data: userData, error: userError } =
         await supabase.auth.getUser();
-      if (userError || !userData.user) {
-        throw new Error("No authenticated user");
-      }
+      if (userError || !userData.user) throw new Error("No authenticated user");
+
       const email = userData.user.email ?? null;
       setAuthEmail(email);
 
@@ -61,7 +59,7 @@ export const ProfileScreen: React.FC = () => {
         try {
           await apiPost("/me/profile", { email });
         } catch (e) {
-          // ignore 400s here; we'll fetch whatever exists next
+          // ignore initial creation errors
         }
       }
 
@@ -71,7 +69,6 @@ export const ProfileScreen: React.FC = () => {
       setDisplayName(prof?.displayName ?? "");
     } catch (err: any) {
       console.log(err);
-      Alert.alert("Error", err.message ?? "Failed to load profile");
     } finally {
       setLoading(false);
     }
@@ -82,10 +79,7 @@ export const ProfileScreen: React.FC = () => {
   }, []);
 
   async function handleSave() {
-    if (!authEmail) {
-      Alert.alert("Error", "Missing auth email");
-      return;
-    }
+    if (!authEmail) return;
     setSaving(true);
     try {
       await apiPost("/me/profile", {
@@ -93,6 +87,7 @@ export const ProfileScreen: React.FC = () => {
         displayName: displayName || undefined,
       });
       await loadProfile();
+      Alert.alert("Profile Updated", "Your player card has been updated.");
     } catch (err: any) {
       Alert.alert("Error", err.message ?? "Failed to save profile");
     } finally {
@@ -108,11 +103,9 @@ export const ProfileScreen: React.FC = () => {
 
   async function handleDeleteAccount() {
     if (!authEmail) return;
-
     setDeleting(true);
     try {
       await apiPost("/me/delete-account", {});
-
       await supabase.auth.signOut();
     } catch (err: any) {
       Alert.alert("Error", err.message ?? "Failed to delete account");
@@ -123,25 +116,21 @@ export const ProfileScreen: React.FC = () => {
 
   async function handleLogout() {
     const { error } = await supabase.auth.signOut();
-    if (error) {
-      Alert.alert("Error", error.message);
-    }
+    if (error) Alert.alert("Error", error.message);
   }
 
   function contactSupport() {
-    const subject = encodeURIComponent("Sleep League support");
+    const subject = encodeURIComponent("SlumberLeague Support");
     const body = encodeURIComponent(
-      "Hi Sleep League team,\n\nI need help with...\n\n"
+      "Player ID: " + (profile?.id || "Unknown") + "\n\nI need help with..."
     );
-
     const mailto = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
-
     Linking.openURL(mailto).catch(() => {
       Alert.alert("Email not available", `Please email us at ${SUPPORT_EMAIL}`);
     });
   }
 
-  const nameForAvatar = displayName || authEmail || "You";
+  const nameForAvatar = displayName || authEmail || "Player";
   const initials =
     nameForAvatar
       .split(" ")
@@ -152,333 +141,392 @@ export const ProfileScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <View
-        style={[
-          styles.container,
-          { paddingTop: 12 + insets.top },
-          styles.center,
-        ]}
-      >
-        <ActivityIndicator color={colors.primary} />
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator color={theme.colors.primary} size="large" />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: 12 + insets.top }]}>
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <View style={styles.headerLeft}>
-          <View style={styles.avatar}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
+    >
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: 12 + insets.top },
+        ]}
+      >
+        {/* Player Card Header */}
+        <View style={styles.headerProfile}>
+          <View style={styles.avatarContainer}>
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
-          <View>
-            <Text style={styles.title}>{displayName || "Your profile"}</Text>
-            <Text style={styles.subtitle}>
-              {authEmail ?? "No email on file"}
-            </Text>
+          <Text style={styles.profileName}>
+            {displayName || "Unknown Player"}
+          </Text>
+          <Text style={styles.profileEmail}>{authEmail}</Text>
+          <View style={styles.statusBadge}>
+            <View style={styles.statusDot} />
+            <Text style={styles.statusText}>Active Duty</Text>
           </View>
         </View>
-      </View>
 
-      {/* Account card */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Account</Text>
+        {/* Edit Profile Section */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>PLAYER SETTINGS</Text>
 
-        <Text style={styles.label}>Email</Text>
-        <Text style={styles.value}>{authEmail ?? "Unknown"}</Text>
+          <View style={styles.card}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Display Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your gamer tag"
+                placeholderTextColor={theme.colors.textTertiary}
+                value={displayName}
+                onChangeText={setDisplayName}
+              />
+            </View>
 
-        <Text style={styles.label}>Display name</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="What should friends see?"
-          placeholderTextColor={colors.textSecondary}
-          value={displayName}
-          onChangeText={setDisplayName}
-        />
+            <Pressable
+              style={({ pressed }) => [
+                styles.saveButton,
+                saving && { opacity: 0.7 },
+                pressed && { opacity: 0.9 },
+              ]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.saveButtonText}>Update Card</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
 
-        <Pressable
-          style={[styles.primaryButton, saving && { opacity: 0.7 }]}
-          onPress={handleSave}
-          disabled={saving}
-        >
-          <Text style={styles.primaryButtonText}>
-            {saving ? "Saving…" : "Save profile"}
-          </Text>
-        </Pressable>
-      </View>
+        {/* Support & Legal */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>SUPPORT</Text>
+          <View style={styles.card}>
+            <Pressable style={styles.menuItem} onPress={contactSupport}>
+              <Ionicons
+                name="mail-outline"
+                size={20}
+                color={theme.colors.textSecondary}
+              />
+              <Text style={styles.menuItemText}>Contact Command</Text>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={theme.colors.textTertiary}
+              />
+            </Pressable>
 
-      {/* Settings card */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Settings</Text>
-        <Text style={styles.muted}>More options coming later.</Text>
-      </View>
+            <View style={styles.menuDivider} />
 
-      {/* Support card */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Support</Text>
-        <Text style={styles.muted}>Need help with Sleep League?</Text>
+            <Pressable style={styles.menuItem} onPress={openPrivacyPolicy}>
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={20}
+                color={theme.colors.textSecondary}
+              />
+              <Text style={styles.menuItemText}>Privacy Protocols</Text>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={theme.colors.textTertiary}
+              />
+            </Pressable>
+          </View>
+        </View>
 
-        <Pressable style={styles.supportButton} onPress={contactSupport}>
-          <Text style={styles.supportButtonText}>Contact support</Text>
-        </Pressable>
-        <Pressable onPress={openPrivacyPolicy} style={{ marginTop: 8 }}>
-          <Text style={styles.privacyLink}>View privacy policy</Text>
-        </Pressable>
-      </View>
+        {/* Danger Zone */}
+        <View style={styles.dangerZone}>
+          <Pressable style={styles.logoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutText}>Log Out</Text>
+          </Pressable>
 
-      {/* Logout */}
-      <View style={{ marginBottom: 16 }}>
-        <Pressable
-          style={styles.deleteButton}
-          onPress={() => setShowDeleteConfirm(true)}
-        >
-          <Text style={styles.deleteButtonText}>Delete account</Text>
-        </Pressable>
-      </View>
+          <Pressable onPress={() => setShowDeleteConfirm(true)}>
+            <Text style={styles.deleteLink}>Delete Account</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
 
-      <View style={{ marginBottom: 16 }}>
-        <Pressable style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Log out</Text>
-        </Pressable>
-      </View>
+      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <View style={styles.modalBackdrop}>
+        <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Delete your account?</Text>
-            <Text style={styles.modalSubtitle}>
-              This will permanently erase your sleep data, friends, and profile.
+            <Ionicons
+              name="warning"
+              size={32}
+              color={theme.colors.error}
+              style={{ marginBottom: 12 }}
+            />
+            <Text style={styles.modalTitle}>Delete Account?</Text>
+            <Text style={styles.modalText}>
+              This action is irreversible. All your sleep data and stats will be
+              wiped from the servers.
             </Text>
 
-            <View style={styles.modalButtonsRow}>
+            <View style={styles.modalActions}>
               <Pressable
-                style={[styles.modalButton, styles.modalButtonSecondary]}
+                style={styles.modalCancelBtn}
                 onPress={() => setShowDeleteConfirm(false)}
               >
-                <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>Cancel</Text>
               </Pressable>
 
               <Pressable
-                style={[styles.modalButton, styles.modalButtonPrimary]}
+                style={styles.modalDeleteBtn}
                 onPress={handleDeleteAccount}
               >
-                <Text style={styles.modalButtonPrimaryText}>
-                  {deleting ? "Deleting…" : "Delete"}
+                <Text style={styles.modalDeleteText}>
+                  {deleting ? "Deleting..." : "Confirm Delete"}
                 </Text>
               </Pressable>
             </View>
           </View>
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    backgroundColor: colors.background,
+    backgroundColor: theme.colors.background,
   },
   center: {
     alignItems: "center",
     justifyContent: "center",
   },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+  },
 
-  headerRow: {
-    flexDirection: "row",
+  // Header Profile
+  headerProfile: {
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 32,
+    marginTop: 10,
   },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceMuted,
+  avatarContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: theme.colors.surface,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+    shadowColor: theme.colors.primary,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
   },
   avatarText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.primary,
+    fontSize: 28,
+    fontWeight: "800",
+    color: theme.colors.primary,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: colors.primary,
+  profileName: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: theme.colors.textPrimary,
+    marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  label: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 8,
-  },
-  value: {
+  profileEmail: {
     fontSize: 14,
-    color: colors.textPrimary,
-    marginTop: 2,
+    color: theme.colors.textSecondary,
+    marginBottom: 12,
   },
-  input: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginTop: 4,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-
-  primaryButton: {
-    marginTop: 12,
-    backgroundColor: colors.primary,
-    borderRadius: 999,
-    paddingVertical: 10,
+  statusBadge: {
+    flexDirection: "row",
     alignItems: "center",
+    backgroundColor: theme.colors.surfaceHighlight,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
   },
-  primaryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.colors.success,
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
     fontWeight: "600",
   },
 
-  muted: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-
-  footer: {
-    marginTop: "auto",
+  // Sections
+  sectionContainer: {
     marginBottom: 24,
   },
-  logoutButton: {
-    borderRadius: 999,
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: theme.colors.textTertiary,
+    marginBottom: 8,
+    marginLeft: 4,
+    letterSpacing: 1,
+  },
+  card: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
-    borderColor: colors.error,
-    paddingVertical: 10,
+    borderColor: theme.colors.border,
+  },
+
+  // Inputs
+  inputGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    marginBottom: 8,
+    fontWeight: "500",
+  },
+  input: {
+    backgroundColor: theme.colors.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+  },
+
+  // Buttons
+  saveButton: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  saveButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  // Menu Items
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  menuItemText: {
+    flex: 1,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+    marginLeft: 12,
+    fontWeight: "500",
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: theme.colors.border,
+    marginVertical: 4,
+  },
+
+  // Danger Zone
+  dangerZone: {
+    alignItems: "center",
+    marginTop: 16,
+    gap: 20,
+  },
+  logoutButton: {
+    width: "100%",
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     alignItems: "center",
   },
   logoutText: {
-    color: colors.error,
-    fontSize: 14,
+    color: theme.colors.error,
+    fontSize: 15,
     fontWeight: "600",
   },
-
-  deleteButton: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.error,
-    paddingVertical: 10,
-    alignItems: "center",
-    marginTop: 12,
-  },
-  deleteButtonText: {
-    color: colors.error,
-    fontSize: 14,
-    fontWeight: "600",
+  deleteLink: {
+    color: theme.colors.textTertiary,
+    fontSize: 13,
+    textDecorationLine: "underline",
   },
 
-  modalBackdrop: {
+  // Modal
+  modalOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: "rgba(0,0,0,0.8)",
     justifyContent: "center",
     alignItems: "center",
+    padding: 24,
   },
   modalCard: {
-    width: "85%",
-    backgroundColor: colors.surface,
-    padding: 20,
-    borderRadius: 16,
+    width: "100%",
+    backgroundColor: theme.colors.surface,
+    padding: 24,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: theme.colors.border,
+    alignItems: "center",
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 4,
+    fontSize: 20,
+    fontWeight: "800",
+    color: theme.colors.textPrimary,
+    marginBottom: 8,
   },
-  modalSubtitle: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 16,
-  },
-  modalButtonsRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: 12,
-  },
-  modalButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    marginLeft: 8,
-  },
-  modalButtonSecondary: {
-    backgroundColor: "transparent",
-  },
-  modalButtonSecondaryText: {
-    color: colors.textSecondary,
-  },
-  modalButtonPrimary: {
-    backgroundColor: colors.error,
-  },
-  modalButtonPrimaryText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  supportButton: {
-    marginTop: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    paddingVertical: 10,
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-  },
-  supportButtonText: {
-    color: colors.primaryLight,
+  modalText: {
     fontSize: 14,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderRadius: 10,
+    backgroundColor: theme.colors.surfaceHighlight,
+  },
+  modalCancelText: {
+    color: theme.colors.textPrimary,
     fontWeight: "600",
   },
-  privacyLink: {
-    fontSize: 13,
-    color: colors.primaryLight,
-    textAlign: "center",
+  modalDeleteBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderRadius: 10,
+    backgroundColor: theme.colors.error + "20", // 20% opacity
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+  },
+  modalDeleteText: {
+    color: theme.colors.error,
+    fontWeight: "600",
   },
 });

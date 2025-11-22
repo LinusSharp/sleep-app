@@ -8,9 +8,15 @@ import {
   Pressable,
   Modal,
   TextInput,
+  ScrollView,
+  RefreshControl,
 } from "react-native";
 import { apiGet, apiPost } from "../api/client";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { theme } from "../theme"; // Ensure you have the theme file created in step 1
+
+// --- Types ---
 
 type SleepNight = {
   id: string;
@@ -20,55 +26,34 @@ type SleepNight = {
   deepSleepMinutes: number;
 };
 
-const colors = {
-  background: "#F4F5FB",
-  surface: "#FFFFFF",
-  surfaceMuted: "#EEF1FF",
-  primary: "#1E2554",
-  primaryLight: "#3C4AA8",
-  accent: "#FFB347",
-  textPrimary: "#111827",
-  textSecondary: "#6B7280",
-  border: "#D0D4E6",
-  error: "#E53935",
-  success: "#16A34A",
-};
+// --- Logic Helpers ---
 
 const GOAL_MINUTES = 8 * 60;
 
-// --- helpers ---
+function calculateScore(totalMinutes: number) {
+  // Simple gamified score: Percentage of 8 hours, capped at 100 (or slightly over for bonus)
+  const score = Math.round((totalMinutes / GOAL_MINUTES) * 100);
+  return score > 100 ? 100 : score;
+}
+
+function getRankTier(score: number) {
+  if (score >= 100) return { label: "DIAMOND", color: "#22D3EE" }; // Cyan
+  if (score >= 90) return { label: "PLATINUM", color: "#A78BFA" }; // Purple
+  if (score >= 75) return { label: "GOLD", color: "#FBBF24" }; // Amber
+  if (score >= 50) return { label: "SILVER", color: "#94A3B8" }; // Slate
+  return { label: "BRONZE", color: "#475569" }; // Dark Slate
+}
 
 function minutesToHoursLabel(mins: number) {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
-  if (m === 0) return `${h} h`;
-  return `${h} h ${m} m`;
-}
-
-function ordinal(n: number) {
-  if (!Number.isFinite(n)) return ""; // <- add this
-
-  const v = n % 100;
-  if (v >= 11 && v <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
 
 function formatDateLabel(dateInput: string) {
   const d = new Date(dateInput);
-  if (Number.isNaN(d.getTime())) {
-    // fallback so you see something instead of "NaNth"
-    return dateInput;
-  }
-
+  if (Number.isNaN(d.getTime())) return dateInput;
   const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const months = [
     "Jan",
@@ -84,30 +69,21 @@ function formatDateLabel(dateInput: string) {
     "Nov",
     "Dec",
   ];
-
-  const weekday = weekdays[d.getDay()];
-  const monthName = months[d.getMonth()];
-  const dayLabel = ordinal(d.getDate());
-
-  return `${weekday} ${dayLabel} ${monthName}`;
+  return `${weekdays[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
 }
 
-function sleepQuality(total: number) {
-  if (total < 7 * 60) return { label: "Short sleep", color: colors.error };
-  if (total > 9 * 60) return { label: "Long sleep", color: colors.accent };
-  return { label: "On target", color: colors.success };
-}
-
-// --- screen ---
+// --- Main Component ---
 
 export const MySleepScreen: React.FC = () => {
+  const insets = useSafeAreaInsets();
+
+  // State
   const [nights, setNights] = useState<SleepNight[]>([]);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const insets = useSafeAreaInsets();
 
-  // fake-night modal state
+  // Modal State
   const [fakeModalVisible, setFakeModalVisible] = useState(false);
   const [fakeTotalHours, setFakeTotalHours] = useState("");
   const [fakeTotalMinutes, setFakeTotalMinutes] = useState("");
@@ -115,7 +91,6 @@ export const MySleepScreen: React.FC = () => {
   const [fakeRemMinutes, setFakeRemMinutes] = useState("");
   const [fakeDeepHours, setFakeDeepHours] = useState("");
   const [fakeDeepMinutes, setFakeDeepMinutes] = useState("");
-
   const [fakeError, setFakeError] = useState<string | null>(null);
 
   const latestNight = useMemo(
@@ -136,21 +111,23 @@ export const MySleepScreen: React.FC = () => {
     }
   }
 
+  useEffect(() => {
+    load();
+  }, []);
+
+  // --- Fake Data Logic (Keep existing) ---
   async function sendFakeNight(total: number, rem: number, deep: number) {
     setSending(true);
     setError(null);
-
     try {
       const today = new Date();
       const isoDate = today.toISOString().slice(0, 10);
-
       await apiPost("/sleep/upload", {
         date: isoDate,
         totalSleepMinutes: total,
         remSleepMinutes: rem,
         deepSleepMinutes: deep,
       });
-
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -159,63 +136,25 @@ export const MySleepScreen: React.FC = () => {
     }
   }
 
-  function openFakeModal() {
-    setFakeError(null);
-    setFakeTotalHours("");
-    setFakeTotalMinutes("");
-    setFakeRemHours("");
-    setFakeRemMinutes("");
-    setFakeDeepHours("");
-    setFakeDeepMinutes("");
-    setFakeModalVisible(true);
-  }
-
-  function parseHoursMinutes(
-    hoursStr: string,
-    minutesStr: string,
-    label: string
-  ): number | null {
-    const h = hoursStr.trim() === "" ? 0 : Number(hoursStr);
-    const m = minutesStr.trim() === "" ? 0 : Number(minutesStr);
-
-    if (
-      !Number.isFinite(h) ||
-      !Number.isFinite(m) ||
-      h < 0 ||
-      m < 0 ||
-      m >= 60
-    ) {
-      setFakeError(`Enter valid ${label} hours and minutes (minutes 0–59).`);
-      return null;
-    }
-
-    const total = h * 60 + m;
-    if (total <= 0) {
-      setFakeError(`${label} must be more than 0 minutes.`);
-      return null;
-    }
-
-    return total;
-  }
-
   function handleFakeSubmit() {
     setFakeError(null);
+    const parse = (h: string, m: string) => {
+      const hr = Number(h || "0");
+      const mn = Number(m || "0");
+      if (isNaN(hr) || isNaN(mn)) return null;
+      return hr * 60 + mn;
+    };
 
-    const total = parseHoursMinutes(
-      fakeTotalHours,
-      fakeTotalMinutes,
-      "total sleep"
-    );
-    if (total == null) return;
+    const total = parse(fakeTotalHours, fakeTotalMinutes);
+    const rem = parse(fakeRemHours, fakeRemMinutes);
+    const deep = parse(fakeDeepHours, fakeDeepMinutes);
 
-    const rem = parseHoursMinutes(fakeRemHours, fakeRemMinutes, "REM");
-    if (rem == null) return;
-
-    const deep = parseHoursMinutes(fakeDeepHours, fakeDeepMinutes, "Deep");
-    if (deep == null) return;
-
+    if (total === null || rem === null || deep === null || total <= 0) {
+      setFakeError("Invalid duration.");
+      return;
+    }
     if (rem + deep > total) {
-      setFakeError("REM + Deep cannot be more than total minutes.");
+      setFakeError("Components cannot exceed total.");
       return;
     }
 
@@ -223,321 +162,292 @@ export const MySleepScreen: React.FC = () => {
     sendFakeNight(total, rem, deep);
   }
 
-  useEffect(() => {
-    load();
-  }, []);
+  // --- Render Components ---
 
-  const progressRatio =
-    latestNight && latestNight.totalSleepMinutes > 0
-      ? Math.min(1, latestNight.totalSleepMinutes / GOAL_MINUTES)
-      : 0;
-
-  const lightMinutes = latestNight
-    ? Math.max(
-        0,
-        latestNight.totalSleepMinutes -
-          latestNight.remSleepMinutes -
-          latestNight.deepSleepMinutes
-      )
-    : 0;
-
-  return (
-    <View
-      style={
-        (styles.container, [styles.container, { paddingTop: 12 + insets.top }])
-      }
-    >
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.title}>My Sleep</Text>
-          <Text style={styles.subtitle}>Last 7 nights overview</Text>
+  const renderHeroCard = () => {
+    if (!latestNight) {
+      return (
+        <View style={styles.emptyHero}>
+          <Ionicons name="moon" size={48} color={theme.colors.textTertiary} />
+          <Text style={styles.emptyHeroText}>No sleep data recorded.</Text>
+          <Pressable
+            style={styles.ctaButton}
+            onPress={() => setFakeModalVisible(true)}
+          >
+            <Text style={styles.ctaButtonText}>Log Sleep</Text>
+          </Pressable>
         </View>
-        <Pressable style={styles.addButton} onPress={openFakeModal}>
-          <Text style={styles.addButtonIcon}>☾</Text>
-          <Text style={styles.addButtonLabel}>
-            {sending ? "Saving…" : "Add sleep"}
+      );
+    }
+
+    const score = calculateScore(latestNight.totalSleepMinutes);
+    const rank = getRankTier(score);
+    const progressPercent = Math.min(
+      100,
+      (latestNight.totalSleepMinutes / GOAL_MINUTES) * 100
+    );
+
+    return (
+      <View style={styles.heroCard}>
+        {/* Header: Date & Rank */}
+        <View style={styles.heroHeader}>
+          <Text style={styles.heroDate}>
+            {formatDateLabel(latestNight.date)}
           </Text>
-        </Pressable>
-      </View>
-
-      {loading && (
-        <View style={styles.centerRow}>
-          <ActivityIndicator color={colors.primary} />
+          <View
+            style={[
+              styles.rankBadge,
+              { borderColor: rank.color, backgroundColor: rank.color + "20" },
+            ]}
+          >
+            <Text style={[styles.rankText, { color: rank.color }]}>
+              {rank.label}
+            </Text>
+          </View>
         </View>
-      )}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+        {/* Main Score */}
+        <View style={styles.scoreSection}>
+          <Text style={styles.scoreLabel}>Daily Score</Text>
+          <Text style={[styles.scoreValue, { color: rank.color }]}>
+            {score}
+          </Text>
+        </View>
 
-      {/* Today / last night summary */}
-      {latestNight ? (
-        <View style={styles.card}>
-          {/* Card header */}
-          <View style={styles.cardHeader}>
-            <View>
-              <Text style={styles.cardLabel}>Last night</Text>
-              <Text style={styles.cardDate}>
-                {formatDateLabel(latestNight.date)}
-              </Text>
-            </View>
-            {(() => {
-              const q = sleepQuality(latestNight.totalSleepMinutes);
-              return (
-                <View style={[styles.qualityPill, { borderColor: q.color }]}>
-                  <View
-                    style={[styles.qualityDot, { backgroundColor: q.color }]}
-                  />
-                  <Text style={[styles.qualityText, { color: q.color }]}>
-                    {q.label}
-                  </Text>
-                </View>
-              );
-            })()}
-          </View>
-
-          {/* Big total + goal */}
-          <View style={styles.totalRow}>
-            <Text style={styles.totalValue}>
-              {minutesToHoursLabel(latestNight.totalSleepMinutes)}
-            </Text>
-            <Text style={styles.totalSub}>
-              Goal: {minutesToHoursLabel(GOAL_MINUTES)}
-            </Text>
-          </View>
-
-          {/* Explicit metrics row */}
-          <View style={styles.metricsRow}>
-            <View style={styles.metricCol}>
-              <Text style={styles.metricLabel}>Total</Text>
-              <Text style={styles.metricValue}>
-                {minutesToHoursLabel(latestNight.totalSleepMinutes)}
-              </Text>
-            </View>
-            <View style={styles.metricCol}>
-              <Text style={styles.metricLabel}>REM</Text>
-              <Text style={styles.metricValue}>
-                {minutesToHoursLabel(latestNight.remSleepMinutes)}
-              </Text>
-            </View>
-            <View style={styles.metricCol}>
-              <Text style={styles.metricLabel}>Deep</Text>
-              <Text style={styles.metricValue}>
-                {minutesToHoursLabel(latestNight.deepSleepMinutes)}
-              </Text>
-            </View>
-          </View>
-
-          {/* Goal progress bar */}
-          <View style={styles.progressBar}>
+        {/* Progress Bar */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBarBg}>
             <View
               style={[
-                styles.progressFill,
-                { width: `${progressRatio * 100}%` },
+                styles.progressBarFill,
+                { width: `${progressPercent}%`, backgroundColor: rank.color },
               ]}
             />
           </View>
           <View style={styles.progressLabels}>
-            <Text style={styles.progressLabelText}>0 h</Text>
-            <Text style={styles.progressLabelText}>8 h</Text>
-          </View>
-
-          {/* Sleep stages segmented bar */}
-          <View style={styles.stagesContainer}>
-            <View style={styles.stagesBar}>
-              <View
-                style={[
-                  styles.stageSegment,
-                  {
-                    flex: latestNight.remSleepMinutes,
-                    backgroundColor: colors.primaryLight,
-                  },
-                ]}
-              />
-              <View
-                style={[
-                  styles.stageSegment,
-                  {
-                    flex: latestNight.deepSleepMinutes,
-                    backgroundColor: colors.accent,
-                  },
-                ]}
-              />
-              <View
-                style={[
-                  styles.stageSegment,
-                  {
-                    flex: lightMinutes,
-                    backgroundColor: colors.surfaceMuted,
-                  },
-                ]}
-              />
-            </View>
-            <View style={styles.stagesLegendRow}>
-              <View style={styles.legendItem}>
-                <View
-                  style={[
-                    styles.legendDot,
-                    { backgroundColor: colors.primaryLight },
-                  ]}
-                />
-                <Text style={styles.legendText}>REM</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View
-                  style={[styles.legendDot, { backgroundColor: colors.accent }]}
-                />
-                <Text style={styles.legendText}>Deep</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View
-                  style={[
-                    styles.legendDot,
-                    { backgroundColor: colors.surfaceMuted },
-                  ]}
-                />
-                <Text style={styles.legendText}>Other</Text>
-              </View>
-            </View>
+            <Text style={styles.progressText}>
+              {minutesToHoursLabel(latestNight.totalSleepMinutes)} slept
+            </Text>
+            <Text style={styles.progressText}>Goal: 8h</Text>
           </View>
         </View>
-      ) : (
-        <Text style={styles.emptyText}>No sleep logged yet.</Text>
-      )}
 
-      {/* History list */}
-      <Text style={styles.sectionTitle}>Last 7 nights</Text>
-      <FlatList
-        data={nights}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 32 }}
-        renderItem={({ item }) => (
-          <View style={styles.historyRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.historyDate}>
-                {formatDateLabel(item.date)}
-              </Text>
-              <Text style={styles.historySubtitle}>
-                {minutesToHoursLabel(item.totalSleepMinutes)} total
-              </Text>
-            </View>
-            <View style={styles.historyMetric}>
-              <Text style={styles.historyLabel}>REM</Text>
-              <Text style={styles.historyValue}>
-                {minutesToHoursLabel(item.remSleepMinutes)}
-              </Text>
-            </View>
-            <View style={styles.historyMetric}>
-              <Text style={styles.historyLabel}>Deep</Text>
-              <Text style={styles.historyValue}>
-                {minutesToHoursLabel(item.deepSleepMinutes)}
-              </Text>
-            </View>
+        {/* Stats Grid */}
+        <View style={styles.statsGrid}>
+          <View style={styles.statBox}>
+            <Ionicons name="flash" size={16} color={theme.colors.accent} />
+            <Text style={styles.statValue}>
+              {minutesToHoursLabel(latestNight.remSleepMinutes)}
+            </Text>
+            <Text style={styles.statLabel}>REM</Text>
           </View>
-        )}
-      />
+          <View style={styles.statDivider} />
+          <View style={styles.statBox}>
+            <Ionicons
+              name="battery-charging"
+              size={16}
+              color={theme.colors.success}
+            />
+            <Text style={styles.statValue}>
+              {minutesToHoursLabel(latestNight.deepSleepMinutes)}
+            </Text>
+            <Text style={styles.statLabel}>Deep</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statBox}>
+            <Ionicons
+              name="time"
+              size={16}
+              color={theme.colors.textSecondary}
+            />
+            <Text style={styles.statValue}>
+              {minutesToHoursLabel(
+                latestNight.totalSleepMinutes -
+                  latestNight.remSleepMinutes -
+                  latestNight.deepSleepMinutes
+              )}
+            </Text>
+            <Text style={styles.statLabel}>Light</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
-      {/* Fake night modal */}
+  const renderHistoryItem = ({ item }: { item: SleepNight }) => {
+    const score = calculateScore(item.totalSleepMinutes);
+    const rank = getRankTier(score);
+
+    return (
+      <View style={styles.historyRow}>
+        <View
+          style={[styles.historyIndicator, { backgroundColor: rank.color }]}
+        />
+        <View style={styles.historyContent}>
+          <View>
+            <Text style={styles.historyDate}>{formatDateLabel(item.date)}</Text>
+            <Text style={styles.historySubText}>
+              {rank.label} • {score} pts
+            </Text>
+          </View>
+          <Text style={styles.historyValue}>
+            {minutesToHoursLabel(item.totalSleepMinutes)}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <View style={[styles.container, { paddingTop: 12 + insets.top }]}>
+      {/* Top Header */}
+      <View style={styles.pageHeader}>
+        <View>
+          <Text style={styles.headerTitle}>Dashboard</Text>
+          <Text style={styles.headerSubtitle}>Track your recovery</Text>
+        </View>
+        <Pressable
+          style={styles.addButton}
+          onPress={() => setFakeModalVisible(true)}
+        >
+          <Ionicons name="add" size={20} color="#FFF" />
+        </Pressable>
+      </View>
+
+      {error && <Text style={styles.errorText}>{error}</Text>}
+
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={load}
+            tintColor={theme.colors.primary}
+          />
+        }
+      >
+        {/* Hero Card */}
+        {renderHeroCard()}
+
+        {/* Match History */}
+        <Text style={styles.sectionTitle}>Recent Matches</Text>
+        {nights.length > 0 ? (
+          <View style={styles.listContainer}>
+            {nights.map((night) => (
+              <React.Fragment key={night.id}>
+                {renderHistoryItem({ item: night })}
+              </React.Fragment>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.emptyText}>
+            Start sleeping to build your history.
+          </Text>
+        )}
+      </ScrollView>
+
+      {/* --- LOG SLEEP MODAL (Dark Themed) --- */}
       <Modal
         visible={fakeModalVisible}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setFakeModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Add fake night</Text>
-            <Text style={styles.modalSubtitle}>
-              Enter hours and minutes for each stage.
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalHeader}>Log Session</Text>
+            <Text style={styles.modalSub}>
+              Manually enter your sleep stats.
             </Text>
 
-            <View style={styles.modalField}>
-              <Text style={styles.modalLabel}>Total sleep</Text>
-              <View style={styles.modalInputRow}>
+            {/* Input Group: Total */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Total Duration</Text>
+              <View style={styles.row}>
                 <TextInput
+                  style={styles.input}
+                  placeholder="08"
+                  placeholderTextColor={theme.colors.textTertiary}
+                  keyboardType="numeric"
                   value={fakeTotalHours}
                   onChangeText={setFakeTotalHours}
-                  keyboardType="numeric"
-                  style={[styles.modalInput, styles.modalInputHalf]}
-                  placeholder="h"
-                  placeholderTextColor={colors.textSecondary}
                 />
-                <Text style={styles.modalInputSuffix}>h</Text>
+                <Text style={styles.unit}>h</Text>
                 <TextInput
+                  style={styles.input}
+                  placeholder="30"
+                  placeholderTextColor={theme.colors.textTertiary}
+                  keyboardType="numeric"
                   value={fakeTotalMinutes}
                   onChangeText={setFakeTotalMinutes}
-                  keyboardType="numeric"
-                  style={[styles.modalInput, styles.modalInputHalf]}
-                  placeholder="m"
-                  placeholderTextColor={colors.textSecondary}
                 />
-                <Text style={styles.modalInputSuffix}>m</Text>
+                <Text style={styles.unit}>m</Text>
               </View>
             </View>
 
-            <View style={styles.modalField}>
-              <Text style={styles.modalLabel}>REM</Text>
-              <View style={styles.modalInputRow}>
+            {/* Input Group: REM */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>REM Sleep</Text>
+              <View style={styles.row}>
                 <TextInput
+                  style={styles.input}
+                  placeholder="02"
+                  placeholderTextColor={theme.colors.textTertiary}
+                  keyboardType="numeric"
                   value={fakeRemHours}
                   onChangeText={setFakeRemHours}
-                  keyboardType="numeric"
-                  style={[styles.modalInput, styles.modalInputHalf]}
-                  placeholder="h"
-                  placeholderTextColor={colors.textSecondary}
                 />
-                <Text style={styles.modalInputSuffix}>h</Text>
+                <Text style={styles.unit}>h</Text>
                 <TextInput
+                  style={styles.input}
+                  placeholder="00"
+                  placeholderTextColor={theme.colors.textTertiary}
+                  keyboardType="numeric"
                   value={fakeRemMinutes}
                   onChangeText={setFakeRemMinutes}
-                  keyboardType="numeric"
-                  style={[styles.modalInput, styles.modalInputHalf]}
-                  placeholder="m"
-                  placeholderTextColor={colors.textSecondary}
                 />
-                <Text style={styles.modalInputSuffix}>m</Text>
+                <Text style={styles.unit}>m</Text>
               </View>
             </View>
 
-            <View style={styles.modalField}>
-              <Text style={styles.modalLabel}>Deep</Text>
-              <View style={styles.modalInputRow}>
+            {/* Input Group: Deep */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Deep Sleep</Text>
+              <View style={styles.row}>
                 <TextInput
+                  style={styles.input}
+                  placeholder="01"
+                  placeholderTextColor={theme.colors.textTertiary}
+                  keyboardType="numeric"
                   value={fakeDeepHours}
                   onChangeText={setFakeDeepHours}
-                  keyboardType="numeric"
-                  style={[styles.modalInput, styles.modalInputHalf]}
-                  placeholder="h"
-                  placeholderTextColor={colors.textSecondary}
                 />
-                <Text style={styles.modalInputSuffix}>h</Text>
+                <Text style={styles.unit}>h</Text>
                 <TextInput
+                  style={styles.input}
+                  placeholder="45"
+                  placeholderTextColor={theme.colors.textTertiary}
+                  keyboardType="numeric"
                   value={fakeDeepMinutes}
                   onChangeText={setFakeDeepMinutes}
-                  keyboardType="numeric"
-                  style={[styles.modalInput, styles.modalInputHalf]}
-                  placeholder="m"
-                  placeholderTextColor={colors.textSecondary}
                 />
-                <Text style={styles.modalInputSuffix}>m</Text>
+                <Text style={styles.unit}>m</Text>
               </View>
             </View>
 
-            {fakeError ? (
-              <Text style={styles.modalError}>{fakeError}</Text>
-            ) : null}
+            {fakeError && <Text style={styles.modalError}>{fakeError}</Text>}
 
-            <View style={styles.modalButtonsRow}>
+            <View style={styles.actionRow}>
               <Pressable
-                style={[styles.modalButton, styles.modalButtonSecondary]}
                 onPress={() => setFakeModalVisible(false)}
+                style={styles.cancelBtn}
               >
-                <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+                <Text style={styles.cancelText}>Cancel</Text>
               </Pressable>
-              <Pressable
-                style={[styles.modalButton, styles.modalButtonPrimary]}
-                onPress={handleFakeSubmit}
-              >
-                <Text style={styles.modalButtonPrimaryText}>Save</Text>
+              <Pressable onPress={handleFakeSubmit} style={styles.saveBtn}>
+                <Text style={styles.saveText}>
+                  {sending ? "Saving..." : "Save Log"}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -547,347 +457,319 @@ export const MySleepScreen: React.FC = () => {
   );
 };
 
-// --- styles ---
+// --- Styles ---
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
   container: {
     flex: 1,
+    backgroundColor: theme.colors.background,
     paddingHorizontal: 24,
-    backgroundColor: colors.background,
   },
-  headerRow: {
+
+  // Header
+  pageHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-end",
-    marginBottom: 12,
+    alignItems: "center",
+    marginBottom: 24,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: colors.primary,
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: theme.colors.textPrimary,
+    letterSpacing: -0.5,
   },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    marginTop: 2,
-  },
-  fakeLink: {
-    color: colors.primaryLight,
+  headerSubtitle: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
     fontWeight: "500",
-    fontSize: 13,
   },
-  centerRow: {
-    marginTop: 16,
+  addButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.surfaceHighlight,
+    justifyContent: "center",
     alignItems: "center",
-  },
-  error: {
-    color: colors.error,
-    marginTop: 8,
-    fontSize: 13,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
 
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 20,
-    marginTop: 8,
-    marginBottom: 16,
+  // Hero Card
+  heroCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: 24,
+    padding: 24,
+    marginBottom: 32,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: theme.colors.border,
     shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 5,
   },
-  cardHeader: {
+  heroHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  cardLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  cardDate: {
-    fontSize: 15,
+  heroDate: {
+    fontSize: 16,
     fontWeight: "600",
-    color: colors.textPrimary,
+    color: theme.colors.textSecondary,
   },
-
-  qualityPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 999,
+  rankBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
+    borderRadius: 8,
     borderWidth: 1,
   },
-  qualityDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 999,
-    marginRight: 6,
+  rankText: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.5,
   },
-  qualityText: {
-    fontSize: 11,
-    fontWeight: "600",
+  scoreSection: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  scoreLabel: {
+    fontSize: 14,
+    color: theme.colors.textTertiary,
+    textTransform: "uppercase",
+    fontWeight: "700",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  scoreValue: {
+    fontSize: 64,
+    fontWeight: "800",
+    lineHeight: 72,
   },
 
-  totalRow: {
-    alignItems: "center",
+  // Progress Bar
+  progressContainer: {
+    marginBottom: 24,
+  },
+  progressBarBg: {
+    height: 12,
+    backgroundColor: theme.colors.surfaceHighlight,
+    borderRadius: 6,
+    overflow: "hidden",
     marginBottom: 8,
   },
-  totalValue: {
-    fontSize: 26,
-    fontWeight: "700",
-    color: colors.textPrimary,
-  },
-  totalSub: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-
-  metricsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-    marginTop: 4,
-  },
-  metricCol: {
-    flex: 1,
-    alignItems: "center",
-  },
-  metricLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 2,
-  },
-  metricValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textPrimary,
-  },
-
-  progressBar: {
-    height: 10,
-    borderRadius: 999,
-    backgroundColor: colors.surfaceMuted,
-    overflow: "hidden",
-  },
-  progressFill: {
+  progressBarFill: {
     height: "100%",
-    borderRadius: 999,
-    backgroundColor: colors.primary,
+    borderRadius: 6,
   },
   progressLabels: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 4,
   },
-  progressLabelText: {
-    fontSize: 11,
-    color: colors.textSecondary,
+  progressText: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    fontWeight: "600",
   },
 
-  stagesContainer: {
-    marginTop: 16,
-  },
-  stagesBar: {
+  // Stats Grid
+  statsGrid: {
     flexDirection: "row",
-    height: 10,
-    borderRadius: 999,
-    overflow: "hidden",
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: theme.colors.surfaceHighlight,
+    borderRadius: 16,
+    paddingVertical: 16,
   },
-  stageSegment: {
-    height: "100%",
-  },
-  stagesLegendRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
-  },
-  legendItem: {
-    flexDirection: "row",
+  statBox: {
+    flex: 1,
     alignItems: "center",
   },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    marginRight: 6,
+  statDivider: {
+    width: 1,
+    backgroundColor: theme.colors.border,
+    height: "100%",
   },
-  legendText: {
-    fontSize: 11,
-    color: colors.textSecondary,
-  },
-
-  emptyText: {
-    marginTop: 16,
-    color: colors.textSecondary,
-    fontSize: 14,
-  },
-
-  sectionTitle: {
-    marginBottom: 8,
+  statValue: {
     fontSize: 16,
+    fontWeight: "700",
+    color: theme.colors.textPrimary,
+    marginVertical: 4,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: theme.colors.textTertiary,
     fontWeight: "600",
-    color: colors.textPrimary,
+    textTransform: "uppercase",
+  },
+
+  // Empty States
+  emptyHero: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: 24,
+    padding: 40,
+    alignItems: "center",
+    marginBottom: 32,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderStyle: "dashed",
+  },
+  emptyHeroText: {
+    color: theme.colors.textSecondary,
+    fontSize: 16,
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  ctaButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 999,
+  },
+  ctaButtonText: {
+    color: "#FFF",
+    fontWeight: "700",
+  },
+
+  // History List
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: theme.colors.textPrimary,
+    marginBottom: 16,
+  },
+  listContainer: {
+    gap: 12,
   },
   historyRow: {
     flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    marginBottom: 8,
-    borderRadius: 12,
+    backgroundColor: theme.colors.surface,
+    borderRadius: 16,
+    overflow: "hidden",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: theme.colors.border,
+  },
+  historyIndicator: {
+    width: 6,
+    height: "100%",
+  },
+  historyContent: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
   },
   historyDate: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "600",
-    color: colors.textPrimary,
+    color: theme.colors.textPrimary,
   },
-  historySubtitle: {
+  historySubText: {
     fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  historyMetric: {
-    alignItems: "flex-end",
-    marginLeft: 12,
-  },
-  historyLabel: {
-    fontSize: 11,
-    color: colors.textSecondary,
+    color: theme.colors.textSecondary,
+    marginTop: 4,
   },
   historyValue: {
-    fontSize: 13,
-    color: colors.textPrimary,
-    fontWeight: "500",
+    fontSize: 18,
+    fontWeight: "700",
+    color: theme.colors.textPrimary,
+  },
+  emptyText: {
+    color: theme.colors.textTertiary,
+    textAlign: "center",
+    marginTop: 20,
+  },
+  errorText: {
+    color: theme.colors.error,
+    marginBottom: 10,
   },
 
-  // modal
-  modalBackdrop: {
+  // Modal
+  modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: "rgba(0,0,0,0.8)",
     justifyContent: "center",
-    alignItems: "center",
+    padding: 24,
   },
-  modalCard: {
-    width: "90%",
-    maxWidth: 380,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 20,
+  modalContainer: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: 24,
+    padding: 24,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: theme.colors.border,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.textPrimary,
+  modalHeader: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: theme.colors.textPrimary,
     marginBottom: 4,
   },
-  modalSubtitle: {
-    fontSize: 13,
-    color: colors.textSecondary,
+  modalSub: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    marginBottom: 24,
+  },
+  inputGroup: {
     marginBottom: 16,
   },
-  modalField: {
-    marginBottom: 12,
-  },
-  modalLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  modalInput: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-  modalError: {
-    color: colors.error,
+  inputLabel: {
     fontSize: 12,
-    marginTop: 4,
+    color: theme.colors.textTertiary,
+    fontWeight: "700",
+    textTransform: "uppercase",
     marginBottom: 8,
   },
-  modalButtonsRow: {
+  row: {
     flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: 8,
+    alignItems: "center",
   },
-  modalButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    marginLeft: 8,
+  input: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 12,
+    padding: 12,
+    color: theme.colors.textPrimary,
+    fontSize: 16,
+    textAlign: "center",
   },
-  modalButtonSecondary: {
-    backgroundColor: "transparent",
+  unit: {
+    color: theme.colors.textSecondary,
+    fontSize: 16,
+    fontWeight: "600",
+    marginHorizontal: 8,
   },
-  modalButtonSecondaryText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: "500",
+  actionRow: {
+    flexDirection: "row",
+    marginTop: 16,
+    gap: 12,
   },
-  modalButtonPrimary: {
-    backgroundColor: colors.primary,
+  cancelBtn: {
+    flex: 1,
+    padding: 16,
+    alignItems: "center",
   },
-  modalButtonPrimaryText: {
-    color: "#FFFFFF",
-    fontSize: 14,
+  cancelText: {
+    color: theme.colors.textSecondary,
     fontWeight: "600",
   },
-  addButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  addButtonIcon: {
-    fontSize: 14,
-    marginRight: 6,
-  },
-  addButtonLabel: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: colors.primaryLight,
-  },
-  modalInputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  modalInputHalf: {
+  saveBtn: {
     flex: 1,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
   },
-  modalInputSuffix: {
-    marginHorizontal: 4,
+  saveText: {
+    color: "#FFF",
+    fontWeight: "700",
+  },
+  modalError: {
+    color: theme.colors.error,
     fontSize: 13,
-    color: colors.textSecondary,
+    marginBottom: 12,
+    textAlign: "center",
   },
 });

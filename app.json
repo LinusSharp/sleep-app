@@ -5,33 +5,28 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0F172A",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0F172A"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.linussharp.slumberleague",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "userInterfaceStyle": "dark"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0F172A"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "userInterfaceStyle": "dark"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    },
-    "extra": {
-      "eas": {
-        "projectId": "e87b0838-bd5e-4a25-a5a9-05b71c97215d"
-      }
     }
   }
 }

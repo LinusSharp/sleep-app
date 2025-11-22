@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { ActivityIndicator, View, StyleSheet } from "react-native";
+import { ActivityIndicator, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "./src/lib/supabase";
@@ -10,9 +12,9 @@ import { LoginScreen } from "./src/screens/LoginScreen";
 import { MySleepScreen } from "./src/screens/MySleepScreen";
 import { FriendsScreen } from "./src/screens/FriendsScreen";
 import { LeaderboardScreen } from "./src/screens/LeaderboardScreen";
-import { ProfileScreen } from "./src/screens/ProfileScreen"; // ⬅️ add this import
+import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { Ionicons } from "@expo/vector-icons";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { theme } from "./src/theme";
 
 type RootStackParamList = {
   Auth: undefined;
@@ -22,30 +24,38 @@ type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
 
-const tabColors = {
-  background: "#FFFFFF",
-  border: "#D0D4E6",
-  active: "#1E2554",
-  inactive: "#9CA3AF",
+// Custom Navigation Theme
+const NavTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: theme.colors.background,
+    card: theme.colors.surface,
+    text: theme.colors.textPrimary,
+    border: theme.colors.border,
+    primary: theme.colors.primary,
+  },
 };
 
 function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerShown: false, // let each screen handle its own top section
+        headerShown: false,
         tabBarShowLabel: true,
-        tabBarActiveTintColor: tabColors.active,
-        tabBarInactiveTintColor: tabColors.inactive,
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.textTertiary,
         tabBarStyle: {
-          backgroundColor: tabColors.background,
-          borderTopColor: tabColors.border,
+          backgroundColor: theme.colors.surface,
+          borderTopColor: theme.colors.border,
           borderTopWidth: 1,
-          height: 64,
+          height: 80,
+          paddingTop: 8,
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          marginBottom: 4,
+          fontWeight: "600",
+          marginBottom: 8,
         },
         tabBarIcon: ({ color, size, focused }) => {
           let iconName: keyof typeof Ionicons.glyphMap;
@@ -57,28 +67,39 @@ function MainTabs() {
           } else if (route.name === "Leaderboard") {
             iconName = focused ? "trophy" : "trophy-outline";
           } else {
-            // Profile
             iconName = focused ? "person" : "person-outline";
           }
 
-          return <Ionicons name={iconName} size={size} color={color} />;
+          return (
+            <View
+              style={{
+                alignItems: "center",
+                justifyContent: "center",
+                shadowColor: focused ? theme.colors.primary : "transparent",
+                shadowOpacity: 0.5,
+                shadowRadius: 10,
+              }}
+            >
+              <Ionicons name={iconName} size={size} color={color} />
+            </View>
+          );
         },
       })}
     >
       <Tab.Screen
         name="MySleep"
         component={MySleepScreen}
-        options={{ title: "My Sleep" }}
+        options={{ title: "Sleep" }}
+      />
+      <Tab.Screen
+        name="Leaderboard"
+        component={LeaderboardScreen}
+        options={{ title: "League" }}
       />
       <Tab.Screen
         name="Friends"
         component={FriendsScreen}
         options={{ title: "Friends" }}
-      />
-      <Tab.Screen
-        name="Leaderboard"
-        component={LeaderboardScreen}
-        options={{ title: "Leaderboard" }}
       />
       <Tab.Screen
         name="Profile"
@@ -94,13 +115,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // initial session check
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session ?? null);
       setLoading(false);
     });
 
-    // listen for changes
     const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
     });
@@ -112,32 +131,34 @@ export default function App() {
 
   if (loading) {
     return (
-      <View>
-        <ActivityIndicator color="#1E2554" />
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: theme.colors.background,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <ActivityIndicator color={theme.colors.primary} size="large" />
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {session ? (
-          <Stack.Screen name="Main" component={MainTabs} />
-        ) : (
-          <Stack.Screen name="Auth">{() => <LoginScreen />}</Stack.Screen>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+    // The SafeAreaProvider is crucial for handling the status bar area correctly
+    <SafeAreaProvider
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
+    >
+      <NavigationContainer theme={NavTheme}>
+        <StatusBar style="light" backgroundColor={theme.colors.background} />
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {session ? (
+            <Stack.Screen name="Main" component={MainTabs} />
+          ) : (
+            <Stack.Screen name="Auth">{() => <LoginScreen />}</Stack.Screen>
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 12, // slight extra padding now that safe area is handled
-  },
-});

@@ -28,6 +28,8 @@ type Profile = {
 
 const SUPPORT_EMAIL = "linus.sharp@gmail.com"; // change to your real address
 const PRIVACY_URL = "https://linus-sharp.co.uk/privacy-policy/"; // your real URL
+const EULA_URL =
+  "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
 
 // --- Component ---
 
@@ -98,6 +100,12 @@ export const ProfileScreen: React.FC = () => {
   function openPrivacyPolicy() {
     Linking.openURL(PRIVACY_URL).catch(() => {
       Alert.alert("Error", "Could not open privacy policy.");
+    });
+  }
+
+  function openEULA() {
+    Linking.openURL(EULA_URL).catch(() => {
+      Alert.alert("Error", "Could not open EULA.");
     });
   }
 
@@ -174,6 +182,7 @@ export const ProfileScreen: React.FC = () => {
         </View>
 
         {/* Edit Profile Section */}
+        {/* FIXED: Constraints applied to container so label aligns with card */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>PLAYER SETTINGS</Text>
 
@@ -208,6 +217,7 @@ export const ProfileScreen: React.FC = () => {
         </View>
 
         {/* Support & Legal */}
+        {/* FIXED: Constraints applied to container */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>SUPPORT</Text>
           <View style={styles.card}>
@@ -240,10 +250,32 @@ export const ProfileScreen: React.FC = () => {
                 color={theme.colors.textTertiary}
               />
             </Pressable>
+
+            <View style={styles.menuDivider} />
+
+            <Pressable style={styles.menuItem} onPress={openEULA}>
+              <Ionicons
+                name="document-text-outline"
+                size={20}
+                color={theme.colors.textSecondary}
+              />
+              <Text style={styles.menuItemText}>Terms of Use (EULA)</Text>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={theme.colors.textTertiary}
+              />
+            </Pressable>
           </View>
+
+          <Text style={styles.legalFooter}>
+            SlumberLeague has zero tolerance for objectionable content or
+            abusive users.
+          </Text>
         </View>
 
         {/* Danger Zone */}
+        {/* FIXED: Constraints applied to container */}
         <View style={styles.dangerZone}>
           <Pressable style={styles.logoutButton} onPress={handleLogout}>
             <Text style={styles.logoutText}>Log Out</Text>
@@ -370,6 +402,10 @@ const styles = StyleSheet.create({
   // Sections
   sectionContainer: {
     marginBottom: 24,
+    // FIX: Apply iPad constraints here to align Title, Card, and Footer
+    width: "100%",
+    maxWidth: 600,
+    alignSelf: "center",
   },
   sectionTitle: {
     fontSize: 12,
@@ -385,6 +421,15 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    // FIX: Removed maxWidth from here so it fills the sectionContainer
+  },
+  legalFooter: {
+    fontSize: 12,
+    color: theme.colors.textTertiary,
+    marginTop: 8,
+    marginLeft: 4,
+    fontStyle: "italic",
+    lineHeight: 16,
   },
 
   // Inputs
@@ -445,6 +490,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 16,
     gap: 20,
+    // FIX: Apply iPad constraints here too
+    width: "100%",
+    maxWidth: 600,
+    alignSelf: "center",
   },
   logoutButton: {
     width: "100%",

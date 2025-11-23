@@ -19,8 +19,8 @@
       "userInterfaceStyle": "dark",
       "newArchEnabled": false,
       "infoPlist": {
-        "NSHealthShareUsageDescription": "SlumberLeague needs to read your sleep data to calculate your leaderboard score.",
-        "NSHealthUpdateUsageDescription": "SlumberLeague needs to update your sleep data."
+        "NSHealthShareUsageDescription": "SlumberLeague requires access to your sleep data to calculate your recovery score and rank you on the leaderboards.",
+        "NSHealthUpdateUsageDescription": "SlumberLeague needs permission to write sleep data to HealthKit if you log sessions manually."
       },
       "entitlements": {
         "com.apple.developer.healthkit": true
@@ -46,8 +46,8 @@
       [
         "react-native-health",
         {
-          "NSHealthShareUsageDescription": "SlumberLeague needs to read your sleep data to calculate your leaderboard score.",
-          "NSHealthUpdateUsageDescription": "SlumberLeague needs to update your sleep data."
+          "NSHealthShareUsageDescription": "SlumberLeague requires access to your sleep data to calculate your recovery score and rank you on the leaderboards.",
+          "NSHealthUpdateUsageDescription": "SlumberLeague needs permission to write sleep data to HealthKit if you log sessions manually."
         }
       ],
       [

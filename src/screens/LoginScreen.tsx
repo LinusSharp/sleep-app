@@ -23,6 +23,21 @@ export const LoginScreen: React.FC = () => {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [loading, setLoading] = useState(false);
 
+  async function resendConfirmation() {
+    setLoading(true);
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: email,
+    });
+    setLoading(false);
+
+    if (error) {
+      Alert.alert("Error", error.message);
+    } else {
+      Alert.alert("Sent", "Check your inbox for the confirmation link.");
+    }
+  }
+
   async function handleAuth() {
     if (!email || !password) {
       Alert.alert("Missing info", "Enter email and password");
@@ -35,7 +50,21 @@ export const LoginScreen: React.FC = () => {
         email,
         password,
       });
-      if (error) Alert.alert("Login failed", error.message);
+      if (error) {
+        // APPLE TRAP FIX: Handle unverified email gracefully
+        if (error.message.includes("Email not confirmed")) {
+          Alert.alert(
+            "Verification Needed",
+            "Your email is not verified yet.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Resend Email", onPress: resendConfirmation },
+            ]
+          );
+        } else {
+          Alert.alert("Login failed", error.message);
+        }
+      }
     } else {
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) Alert.alert("Error", error.message);
@@ -183,6 +212,10 @@ const styles = StyleSheet.create({
     padding: 24,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    // ADD THESE 3 LINES FOR IPAD:
+    width: "100%",
+    maxWidth: 500, // Prevents it from getting wider than 500px
+    alignSelf: "center", // Centers the box in the middle of the big screen
   },
   toggleContainer: {
     flexDirection: "row",

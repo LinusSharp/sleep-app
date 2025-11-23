@@ -10,6 +10,8 @@ import {
   Pressable,
   Modal,
   ScrollView,
+  Alert,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { apiGet } from "../api/client";
@@ -74,6 +76,8 @@ function getRankStyle(rank: number) {
   }; // Standard
 }
 
+const SUPPORT_EMAIL = "linus.sharp@gmail.com";
+
 // --- Component ---
 
 export const LeaderboardScreen: React.FC = () => {
@@ -88,6 +92,8 @@ export const LeaderboardScreen: React.FC = () => {
 
   // Data
   const [leaderboards, setLeaderboards] = useState<Leaderboards | null>(null);
+  // APPLE REQUIREMENT: Local Block List state
+  const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
 
   // Controls
   const [scope, setScope] = useState<"friends" | "clan">("friends");
@@ -133,8 +139,10 @@ export const LeaderboardScreen: React.FC = () => {
 
   const rows = useMemo<LeaderboardUser[]>(() => {
     if (!leaderboards) return [];
-    return leaderboards[selectedBoard] ?? [];
-  }, [leaderboards, selectedBoard]);
+    const rawList = leaderboards[selectedBoard] ?? [];
+    // APPLE REQUIREMENT: Filter out blocked users
+    return rawList.filter((user) => !blockedUsers.includes(user.userId));
+  }, [leaderboards, selectedBoard, blockedUsers]);
 
   const myRowInfo = useMemo(() => {
     if (!myUserId || rows.length === 0) return null;
@@ -154,6 +162,53 @@ export const LeaderboardScreen: React.FC = () => {
       nights: row.nightsLogged,
     };
   }, [rows, myUserId, selectedBoard]);
+
+  // --- Handlers ---
+
+  const handleReportUser = (user: LeaderboardUser) => {
+    const subject = encodeURIComponent(
+      `Report User: ${user.displayName || "Unknown"}`
+    );
+    const body = encodeURIComponent(
+      `I would like to report user with ID: ${user.userId}\n\nReason for report:\n`
+    );
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`);
+  };
+
+  const handleBlockUser = (userId: string) => {
+    Alert.alert(
+      "Block User",
+      "You will no longer see this user on the leaderboards. This action cannot be undone easily.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Block",
+          style: "destructive",
+          onPress: () => {
+            setBlockedUsers((prev) => [...prev, userId]);
+            Alert.alert("Blocked", "User has been hidden.");
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRowPress = (user: LeaderboardUser) => {
+    if (user.userId === myUserId) return;
+
+    Alert.alert(user.displayName || "Unknown Player", "Select an action", [
+      {
+        text: "Report User",
+        style: "destructive",
+        onPress: () => handleReportUser(user),
+      },
+      {
+        text: "Block User",
+        onPress: () => handleBlockUser(user.userId),
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
 
   // --- Renderers ---
 
@@ -378,7 +433,9 @@ export const LeaderboardScreen: React.FC = () => {
           else value = item.deepSleepMinutes;
 
           return (
-            <View
+            <TouchableOpacity
+              onPress={() => handleRowPress(item)}
+              activeOpacity={isMe ? 1 : 0.7}
               style={[
                 styles.row,
                 {
@@ -435,7 +492,7 @@ export const LeaderboardScreen: React.FC = () => {
                   {minutesToHours(value)} <Text style={styles.rowUnit}>h</Text>
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         }}
         ListEmptyComponent={

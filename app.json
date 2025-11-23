@@ -15,12 +15,13 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.linussharp.slumberleague",
-      "buildNumber": "13",
+      "buildNumber": "21",
       "userInterfaceStyle": "dark",
       "newArchEnabled": false,
       "infoPlist": {
         "NSHealthShareUsageDescription": "SlumberLeague requires access to your sleep data to calculate your recovery score and rank you on the leaderboards.",
-        "NSHealthUpdateUsageDescription": "SlumberLeague needs permission to write sleep data to HealthKit if you log sessions manually."
+        "NSHealthUpdateUsageDescription": "SlumberLeague needs permission to write sleep data to HealthKit if you log sessions manually.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
         "com.apple.developer.healthkit": true

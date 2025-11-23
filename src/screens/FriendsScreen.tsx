@@ -10,7 +10,6 @@ import {
   Pressable,
   ActivityIndicator,
   Keyboard,
-  TouchableWithoutFeedback,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
@@ -38,7 +37,7 @@ type GroupMember = {
 type Group = {
   id: string;
   name: string;
-  code: string; // Added code to type
+  code: string;
   members: GroupMember[];
 };
 
@@ -80,7 +79,7 @@ export const FriendsScreen: React.FC = () => {
         setFriends(res.friends ?? []);
       } else {
         const res = await apiGet("/groups/me");
-        setMyGroup(res.group); // might be null
+        setMyGroup(res.group);
       }
     } catch (err: any) {
       console.log(err);
@@ -194,8 +193,6 @@ export const FriendsScreen: React.FC = () => {
     );
   }, [friends, search]);
 
-  const dismissKeyboard = () => Keyboard.dismiss();
-
   // --- Renders ---
 
   const renderHeaderTabs = () => (
@@ -228,72 +225,82 @@ export const FriendsScreen: React.FC = () => {
 
   const renderFriendsView = () => (
     <View style={{ flex: 1 }}>
-      {/* Add Friend Card */}
-      <View style={styles.recruitCard}>
-        <View style={styles.recruitHeader}>
-          <Ionicons name="person-add" size={20} color={theme.colors.primary} />
-          <Text style={styles.cardTitle}>Add Friend</Text>
-        </View>
-        <Text style={styles.cardSubtitle}>
-          Enter their email to add them to your list.
-        </Text>
-
-        <View style={styles.inputRow}>
-          <TextInput
-            style={styles.input}
-            placeholder="friend@example.com"
-            placeholderTextColor={theme.colors.textTertiary}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={friendEmail}
-            onChangeText={setFriendEmail}
-          />
-          <Pressable
-            style={({ pressed }) => [
-              styles.addButton,
-              addingFriend && { opacity: 0.7 },
-              pressed && { opacity: 0.9 },
-            ]}
-            onPress={handleAddFriend}
-            disabled={addingFriend}
-          >
-            {addingFriend ? (
-              <ActivityIndicator color="#FFF" size="small" />
-            ) : (
-              <Ionicons name="arrow-forward" size={20} color="#FFF" />
-            )}
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Search & List */}
-      <View style={styles.searchContainer}>
-        <Ionicons
-          name="search"
-          size={16}
-          color={theme.colors.textTertiary}
-          style={styles.searchIcon}
-        />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search friends..."
-          placeholderTextColor={theme.colors.textTertiary}
-          value={search}
-          onChangeText={setSearch}
-        />
-      </View>
-
       <FlatList
         data={filteredFriends}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
+        // FIX: Allow buttons to work while keyboard is open
+        keyboardShouldPersistTaps="handled"
+        // FIX: Close keyboard when scrolling
+        onScrollBeginDrag={Keyboard.dismiss}
         refreshControl={
           <RefreshControl
             refreshing={loading}
             onRefresh={loadData}
             tintColor={theme.colors.primary}
           />
+        }
+        // FIX: Move Static content into Header so everything scrolls
+        ListHeaderComponent={
+          <>
+            <View style={styles.recruitCard}>
+              <View style={styles.recruitHeader}>
+                <Ionicons
+                  name="person-add"
+                  size={20}
+                  color={theme.colors.primary}
+                />
+                <Text style={styles.cardTitle}>Add Friend</Text>
+              </View>
+              <Text style={styles.cardSubtitle}>
+                Enter their email to add them to your list.
+              </Text>
+
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="friend@example.com"
+                  placeholderTextColor={theme.colors.textTertiary}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  value={friendEmail}
+                  onChangeText={setFriendEmail}
+                />
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.addButton,
+                    addingFriend && { opacity: 0.7 },
+                    pressed && { opacity: 0.9 },
+                  ]}
+                  onPress={handleAddFriend}
+                  disabled={addingFriend}
+                >
+                  {addingFriend ? (
+                    <ActivityIndicator color="#FFF" size="small" />
+                  ) : (
+                    <Ionicons name="arrow-forward" size={20} color="#FFF" />
+                  )}
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.searchContainer}>
+              <Ionicons
+                name="search"
+                size={16}
+                color={theme.colors.textTertiary}
+                style={styles.searchIcon}
+              />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search friends..."
+                placeholderTextColor={theme.colors.textTertiary}
+                value={search}
+                onChangeText={setSearch}
+              />
+            </View>
+          </>
         }
         renderItem={({ item }) => {
           const isRemoving = removingId === item.id;
@@ -356,7 +363,7 @@ export const FriendsScreen: React.FC = () => {
 
   const renderClanView = () => {
     if (!myGroup) {
-      // Empty State: Split into Create and Join sections
+      // Empty State (ScrollView is fine here)
       return (
         <ScrollView
           contentContainerStyle={{ paddingBottom: 40 }}
@@ -461,50 +468,54 @@ export const FriendsScreen: React.FC = () => {
     // Joined State
     return (
       <View style={{ flex: 1 }}>
-        <View style={styles.clanHeaderCard}>
-          <View style={styles.clanBanner}>
-            <View style={styles.clanBadge}>
-              <Ionicons
-                name="shield"
-                size={28}
-                color={theme.colors.background}
-              />
-            </View>
-            <View style={{ marginLeft: 16, flex: 1 }}>
-              <Text style={styles.clanName}>{myGroup.name}</Text>
-              <Text style={styles.clanCount}>
-                {myGroup.members.length} Members
-              </Text>
-            </View>
-          </View>
-
-          {/* Code Display */}
-          <View style={styles.codeContainer}>
-            <Text style={styles.codeLabel}>INVITE CODE:</Text>
-            <Text style={styles.codeValue}>{myGroup.code}</Text>
-          </View>
-
-          <Pressable style={styles.leaveBtn} onPress={handleLeaveClan}>
-            <Ionicons
-              name="log-out-outline"
-              size={20}
-              color={theme.colors.error}
-            />
-          </Pressable>
-        </View>
-
-        <Text style={styles.sectionTitle}>MEMBERS</Text>
-
         <FlatList
           data={myGroup.members}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 32 }}
+          contentContainerStyle={{ paddingBottom: 100 }}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
               refreshing={loading}
               onRefresh={loadData}
               tintColor={theme.colors.primary}
             />
+          }
+          // FIX: Move header into list so it scrolls nicely
+          ListHeaderComponent={
+            <>
+              <View style={styles.clanHeaderCard}>
+                <View style={styles.clanBanner}>
+                  <View style={styles.clanBadge}>
+                    <Ionicons
+                      name="shield"
+                      size={28}
+                      color={theme.colors.background}
+                    />
+                  </View>
+                  <View style={{ marginLeft: 16, flex: 1 }}>
+                    <Text style={styles.clanName}>{myGroup.name}</Text>
+                    <Text style={styles.clanCount}>
+                      {myGroup.members.length} Members
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Code Display */}
+                <View style={styles.codeContainer}>
+                  <Text style={styles.codeLabel}>INVITE CODE:</Text>
+                  <Text style={styles.codeValue}>{myGroup.code}</Text>
+                </View>
+
+                <Pressable style={styles.leaveBtn} onPress={handleLeaveClan}>
+                  <Ionicons
+                    name="log-out-outline"
+                    size={20}
+                    color={theme.colors.error}
+                  />
+                </Pressable>
+              </View>
+              <Text style={styles.sectionTitle}>MEMBERS</Text>
+            </>
           }
           renderItem={({ item }) => (
             <View style={styles.row}>
@@ -539,22 +550,20 @@ export const FriendsScreen: React.FC = () => {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={{ flex: 1 }}
     >
-      <TouchableWithoutFeedback onPress={dismissKeyboard}>
-        <View style={[styles.container, { paddingTop: 12 + insets.top }]}>
-          <View style={styles.headerRow}>
-            <View>
-              <Text style={styles.title}>Social</Text>
-              <Text style={styles.subtitle}>Manage your network</Text>
-            </View>
-          </View>
-
-          {renderHeaderTabs()}
-
-          <View style={{ flex: 1, marginTop: 16 }}>
-            {activeTab === "friends" ? renderFriendsView() : renderClanView()}
+      <View style={[styles.container, { paddingTop: 12 + insets.top }]}>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.title}>Social</Text>
+            <Text style={styles.subtitle}>Manage your network</Text>
           </View>
         </View>
-      </TouchableWithoutFeedback>
+
+        {renderHeaderTabs()}
+
+        <View style={{ flex: 1, marginTop: 16 }}>
+          {activeTab === "friends" ? renderFriendsView() : renderClanView()}
+        </View>
+      </View>
     </KeyboardAvoidingView>
   );
 };

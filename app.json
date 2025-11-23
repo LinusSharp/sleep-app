@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.linussharp.slumberleague",
-      "buildNumber": "12",
+      "buildNumber": "13",
       "userInterfaceStyle": "dark",
       "newArchEnabled": false,
       "infoPlist": {
@@ -48,6 +48,14 @@
         {
           "NSHealthShareUsageDescription": "SlumberLeague needs to read your sleep data to calculate your leaderboard score.",
           "NSHealthUpdateUsageDescription": "SlumberLeague needs to update your sleep data."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true
+          }
         }
       ]
     ]

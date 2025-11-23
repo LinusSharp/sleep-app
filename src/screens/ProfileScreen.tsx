@@ -26,8 +26,8 @@ type Profile = {
   displayName: string | null;
 };
 
-const SUPPORT_EMAIL = "support@sleepleague.app"; // change to your real address
-const PRIVACY_URL = "https://your-site.com/privacy"; // your real URL
+const SUPPORT_EMAIL = "linus.sharp@gmail.com"; // change to your real address
+const PRIVACY_URL = "https://linus-sharp.co.uk/privacy-policy/"; // your real URL
 
 // --- Component ---
 

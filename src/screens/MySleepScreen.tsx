@@ -130,45 +130,55 @@ export const MySleepScreen: React.FC = () => {
 
     setSyncing(true);
     try {
-      // 1. Init
       await initHealthKit();
-
-      // 2. Fetch
       const healthData = await fetchLast7DaysSleep();
 
       if (healthData.length === 0) {
-        Alert.alert(
-          "No Data",
-          "No sleep data found in Apple Health for the last 7 days."
-        );
+        Alert.alert("No Data", "No sleep records found.");
         setSyncing(false);
         return;
       }
 
-      // 3. Upload each night
+      let uploadedCount = 0;
       for (const night of healthData) {
-        if (night.totalMinutes > 0) {
+        const total = Math.round(night.totalMinutes);
+        const rem = Math.round(night.remMinutes);
+        const deep = Math.round(night.deepMinutes);
+        const core = Math.round(night.coreMinutes); // Captured from new health.ts
+
+        if (total > 0) {
+          // Assuming your API endpoint can take extra fields, or you just send the standards
+          // If you can't change the backend, 'core' is usually calculated as Total - Rem - Deep
           await apiPost("/sleep/upload", {
             date: night.date,
-            totalSleepMinutes: night.totalMinutes,
-            remSleepMinutes: night.remMinutes,
-            deepSleepMinutes: night.deepMinutes,
+            totalSleepMinutes: total,
+            remSleepMinutes: rem,
+            deepSleepMinutes: deep,
+            // coreSleepMinutes: core, // Add this if backend allows
           });
+          uploadedCount++;
         }
       }
 
       await load();
+
+      // The Alert will now show the correct consolidated data
+      const latest = healthData[0];
       Alert.alert(
-        "Synced",
-        `Imported ${healthData.length} nights from Apple Health.`
+        "Sync Complete",
+        `Synced ${uploadedCount} nights.\n\nLatest (${
+          latest.date
+        }):\nTotal: ${minutesToHoursLabel(
+          latest.totalMinutes
+        )}\nREM: ${minutesToHoursLabel(
+          latest.remMinutes
+        )}\nDeep: ${minutesToHoursLabel(
+          latest.deepMinutes
+        )}\nCore: ${minutesToHoursLabel(latest.coreMinutes)}`
       );
     } catch (err: any) {
       console.log("Sync Error:", err);
-      // SHOW ACTUAL ERROR
-      Alert.alert(
-        "Sync Failed",
-        err.message || "Unknown error. Check Health permissions."
-      );
+      Alert.alert("Sync Error", err.message);
     } finally {
       setSyncing(false);
     }
@@ -349,21 +359,57 @@ export const MySleepScreen: React.FC = () => {
     const score = calculateScore(item.totalSleepMinutes);
     const rank = getRankTier(score);
 
+    // Calculate Light/Core roughly if not provided by backend yet
+    // Ideally, backend should return coreSleepMinutes, but we can infer it:
+    // Light = Total - REM - Deep
+    const lightSleep = Math.max(
+      0,
+      item.totalSleepMinutes - item.remSleepMinutes - item.deepSleepMinutes
+    );
+
     return (
       <View style={styles.historyRow}>
         <View
           style={[styles.historyIndicator, { backgroundColor: rank.color }]}
         />
         <View style={styles.historyContent}>
-          <View>
-            <Text style={styles.historyDate}>{formatDateLabel(item.date)}</Text>
+          <View style={{ flex: 1 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <Text style={styles.historyDate}>
+                {formatDateLabel(item.date)}
+              </Text>
+              <Text style={styles.historyValue}>
+                {minutesToHoursLabel(item.totalSleepMinutes)}
+              </Text>
+            </View>
+
             <Text style={styles.historySubText}>
               {rank.label} • {score} pts
             </Text>
+
+            {/* NEW: Breakdown Display */}
+            <View style={styles.statsRowSmall}>
+              <Text style={styles.statTextSmall}>
+                <Text style={{ color: theme.colors.accent }}>
+                  REM: {minutesToHoursLabel(item.remSleepMinutes)}
+                </Text>
+                {"  •  "}
+                <Text style={{ color: theme.colors.success }}>
+                  Deep: {minutesToHoursLabel(item.deepSleepMinutes)}
+                </Text>
+                {"  •  "}
+                <Text style={{ color: theme.colors.textSecondary }}>
+                  Light: {minutesToHoursLabel(lightSleep)}
+                </Text>
+              </Text>
+            </View>
           </View>
-          <Text style={styles.historyValue}>
-            {minutesToHoursLabel(item.totalSleepMinutes)}
-          </Text>
         </View>
       </View>
     );
@@ -977,5 +1023,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: theme.colors.textPrimary,
     marginBottom: 8,
+  },
+  statsRowSmall: {
+    marginTop: 6,
+  },
+  statTextSmall: {
+    fontSize: 11,
+    fontWeight: "500",
   },
 });

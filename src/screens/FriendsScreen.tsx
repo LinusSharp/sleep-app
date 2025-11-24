@@ -41,6 +41,49 @@ type Group = {
   members: GroupMember[];
 };
 
+// APPLE COMPLIANCE: Enhanced Profanity Filter
+// Normalizes text to catch evasions (e.g. "f.u.c.k", "sh1t", "b!tch")
+function hasProfanity(text: string): boolean {
+  if (!text) return false;
+
+  // 1. Normalize Leetspeak
+  const normalized = text
+    .toLowerCase()
+    .replace(/0/g, "o")
+    .replace(/1/g, "i")
+    .replace(/3/g, "e")
+    .replace(/4/g, "a")
+    .replace(/5/g, "s")
+    .replace(/@/g, "a")
+    .replace(/\$/g, "s")
+    .replace(/!/g, "i");
+
+  // 2. Remove all non-alphabetic characters (spaces, dots, etc)
+  // This catches "s h i t" or "f.u.c.k"
+  const cleanText = normalized.replace(/[^a-z]/g, "");
+
+  const badWords = [
+    "admin",
+    "staff",
+    "mod",
+    "fuck",
+    "shit",
+    "bitch",
+    "ass",
+    "cunt",
+    "dick",
+    "pussy",
+    "whore",
+    "fag",
+    "nigger",
+    "kill",
+    "suicide",
+  ];
+
+  // Check if any bad word exists inside the cleaned text
+  return badWords.some((word) => cleanText.includes(word));
+}
+
 // --- Component ---
 
 export const FriendsScreen: React.FC = () => {
@@ -139,6 +182,15 @@ export const FriendsScreen: React.FC = () => {
 
   async function handleCreateClan() {
     if (!createName.trim()) return Alert.alert("Error", "Enter a clan name");
+
+    // APPLE COMPLIANCE: Guideline 1.2
+    if (hasProfanity(createName)) {
+      return Alert.alert(
+        "Invalid Name",
+        "Please choose a different clan name. Profanity is not allowed."
+      );
+    }
+
     setCreatingClan(true);
     try {
       await apiPost("/groups/create", { name: createName.trim() });

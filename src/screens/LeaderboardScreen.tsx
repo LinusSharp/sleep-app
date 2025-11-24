@@ -14,6 +14,7 @@ import {
   Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiGet } from "../api/client";
 import { supabase } from "../lib/supabase";
 import { theme } from "../theme";
@@ -39,6 +40,11 @@ type Leaderboards = {
   tomRemmer: LeaderboardUser[];
   rollingInTheDeep: LeaderboardUser[];
 };
+
+// --- Constants ---
+
+const SUPPORT_EMAIL = "linus.sharp@gmail.com";
+const BLOCKED_USERS_KEY = "slumber_blocked_users_v1";
 
 // --- Helpers ---
 
@@ -76,8 +82,6 @@ function getRankStyle(rank: number) {
   }; // Standard
 }
 
-const SUPPORT_EMAIL = "linus.sharp@gmail.com";
-
 // --- Component ---
 
 export const LeaderboardScreen: React.FC = () => {
@@ -87,12 +91,12 @@ export const LeaderboardScreen: React.FC = () => {
   // State
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<string | null>(null);
 
   // Data
   const [leaderboards, setLeaderboards] = useState<Leaderboards | null>(null);
-  // APPLE REQUIREMENT: Local Block List state
+
+  // APPLE COMPLIANCE: Persistent Block List state
   const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
 
   // Controls
@@ -101,11 +105,32 @@ export const LeaderboardScreen: React.FC = () => {
     useState<LeaderboardKey>("survivalist");
   const [infoVisible, setInfoVisible] = useState(false);
 
+  // --- Initialization ---
+
+  // 1. Load Local Block List on Mount
+  useEffect(() => {
+    const loadBlockedUsers = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(BLOCKED_USERS_KEY);
+        if (stored) {
+          setBlockedUsers(JSON.parse(stored));
+        }
+      } catch (error) {
+        console.error("Failed to load blocked users", error);
+      }
+    };
+    loadBlockedUsers();
+  }, []);
+
+  // 2. Load API Data when scope changes
+  useEffect(() => {
+    loadLeaderboard();
+  }, [scope]);
+
   async function loadLeaderboard(options?: { refresh?: boolean }) {
     const refresh = options?.refresh ?? false;
     if (refresh) setRefreshing(true);
     else setLoading(true);
-    setError(null);
 
     try {
       const { data: userData, error: userError } =
@@ -125,22 +150,19 @@ export const LeaderboardScreen: React.FC = () => {
       });
     } catch (e: any) {
       console.log(e);
-      // Don't show error on UI for empty clan, just handle via list empty state
     } finally {
       if (refresh) setRefreshing(false);
       else setLoading(false);
     }
   }
 
-  // Reload when scope changes
-  useEffect(() => {
-    loadLeaderboard();
-  }, [scope]);
+  // --- Filtering Logic ---
 
   const rows = useMemo<LeaderboardUser[]>(() => {
     if (!leaderboards) return [];
     const rawList = leaderboards[selectedBoard] ?? [];
-    // APPLE REQUIREMENT: Filter out blocked users
+
+    // APPLE REQUIREMENT: Strict filtering of blocked users
     return rawList.filter((user) => !blockedUsers.includes(user.userId));
   }, [leaderboards, selectedBoard, blockedUsers]);
 
@@ -163,30 +185,62 @@ export const LeaderboardScreen: React.FC = () => {
     };
   }, [rows, myUserId, selectedBoard]);
 
-  // --- Handlers ---
+  // --- Actions & Safety ---
 
-  const handleReportUser = (user: LeaderboardUser) => {
+  const handleReportUser = async (user: LeaderboardUser) => {
     const subject = encodeURIComponent(
       `Report User: ${user.displayName || "Unknown"}`
     );
     const body = encodeURIComponent(
       `I would like to report user with ID: ${user.userId}\n\nReason for report:\n`
     );
-    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`);
+    const url = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
+
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        throw new Error("No email client");
+      }
+    } catch (e) {
+      // APPLE COMPLIANCE: Fallback if no mail app installed
+      Alert.alert(
+        "Report User",
+        `Please email ${SUPPORT_EMAIL} to report this user.\nUser ID: ${user.userId}`,
+        [{ text: "OK" }]
+      );
+    }
   };
 
-  const handleBlockUser = (userId: string) => {
+  const handleBlockUser = async (userId: string) => {
     Alert.alert(
       "Block User",
-      "You will no longer see this user on the leaderboards. This action cannot be undone easily.",
+      "You will no longer see this user on the leaderboards. This will be saved to your device settings.",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Block",
           style: "destructive",
-          onPress: () => {
-            setBlockedUsers((prev) => [...prev, userId]);
-            Alert.alert("Blocked", "User has been hidden.");
+          onPress: async () => {
+            try {
+              // 1. Update State immediately
+              const newList = [...blockedUsers, userId];
+              setBlockedUsers(newList);
+
+              // 2. Persist to Storage (Critical for App Review)
+              await AsyncStorage.setItem(
+                BLOCKED_USERS_KEY,
+                JSON.stringify(newList)
+              );
+
+              Alert.alert(
+                "Blocked",
+                "User has been hidden from your leaderboards."
+              );
+            } catch (error) {
+              Alert.alert("Error", "Could not save block preference.");
+            }
           },
         },
       ]
@@ -194,16 +248,17 @@ export const LeaderboardScreen: React.FC = () => {
   };
 
   const handleRowPress = (user: LeaderboardUser) => {
+    // Don't report yourself
     if (user.userId === myUserId) return;
 
     Alert.alert(user.displayName || "Unknown Player", "Select an action", [
       {
-        text: "Report User",
-        style: "destructive",
+        text: "Report Content",
         onPress: () => handleReportUser(user),
       },
       {
         text: "Block User",
+        style: "destructive",
         onPress: () => handleBlockUser(user.userId),
       },
       { text: "Cancel", style: "cancel" },
@@ -591,16 +646,15 @@ export const LeaderboardScreen: React.FC = () => {
 
               <View style={styles.divider} />
 
-              <Text style={styles.modalSectionTitle}>Rules & Anti-Cheat</Text>
+              <Text style={styles.modalSectionTitle}>Rules & Safety</Text>
               <Text style={styles.ruleText}>
                 • Competition runs Monday to Sunday.
               </Text>
               <Text style={styles.ruleText}>
-                • You must log at least 45 mins for a session to count.
+                • Offensive names will result in a ban.
               </Text>
               <Text style={styles.ruleText}>
-                • For "Survivalist", you must have logged at least one night
-                this week to qualify.
+                • You can tap any player to Report or Block them.
               </Text>
             </ScrollView>
 

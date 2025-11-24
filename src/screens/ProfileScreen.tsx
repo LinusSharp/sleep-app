@@ -26,10 +26,55 @@ type Profile = {
   displayName: string | null;
 };
 
-const SUPPORT_EMAIL = "linus.sharp@gmail.com"; // change to your real address
-const PRIVACY_URL = "https://linus-sharp.co.uk/privacy-policy/"; // your real URL
+const SUPPORT_EMAIL = "linus.sharp@gmail.com";
+const PRIVACY_URL = "https://linus-sharp.co.uk/privacy-policy/";
 const EULA_URL =
   "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
+
+// --- Helpers ---
+
+// APPLE COMPLIANCE: Enhanced Profanity Filter
+// Normalizes text to catch evasions (e.g. "f.u.c.k", "sh1t", "b!tch")
+function hasProfanity(text: string): boolean {
+  if (!text) return false;
+
+  // 1. Normalize Leetspeak
+  const normalized = text
+    .toLowerCase()
+    .replace(/0/g, "o")
+    .replace(/1/g, "i")
+    .replace(/3/g, "e")
+    .replace(/4/g, "a")
+    .replace(/5/g, "s")
+    .replace(/@/g, "a")
+    .replace(/\$/g, "s")
+    .replace(/!/g, "i");
+
+  // 2. Remove all non-alphabetic characters (spaces, dots, etc)
+  // This catches "s h i t" or "f.u.c.k"
+  const cleanText = normalized.replace(/[^a-z]/g, "");
+
+  const badWords = [
+    "admin",
+    "staff",
+    "mod",
+    "fuck",
+    "shit",
+    "bitch",
+    "ass",
+    "cunt",
+    "dick",
+    "pussy",
+    "whore",
+    "fag",
+    "nigger",
+    "kill",
+    "suicide",
+  ];
+
+  // Check if any bad word exists inside the cleaned text
+  return badWords.some((word) => cleanText.includes(word));
+}
 
 // --- Component ---
 
@@ -82,6 +127,16 @@ export const ProfileScreen: React.FC = () => {
 
   async function handleSave() {
     if (!authEmail) return;
+
+    // APPLE COMPLIANCE: Guideline 1.2
+    if (displayName && hasProfanity(displayName)) {
+      Alert.alert(
+        "Invalid Name",
+        "Please choose a different display name. Profanity is not allowed."
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       await apiPost("/me/profile", {
@@ -182,7 +237,6 @@ export const ProfileScreen: React.FC = () => {
         </View>
 
         {/* Edit Profile Section */}
-        {/* FIXED: Constraints applied to container so label aligns with card */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>PLAYER SETTINGS</Text>
 
@@ -217,7 +271,6 @@ export const ProfileScreen: React.FC = () => {
         </View>
 
         {/* Support & Legal */}
-        {/* FIXED: Constraints applied to container */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>SUPPORT</Text>
           <View style={styles.card}>
@@ -275,7 +328,6 @@ export const ProfileScreen: React.FC = () => {
         </View>
 
         {/* Danger Zone */}
-        {/* FIXED: Constraints applied to container */}
         <View style={styles.dangerZone}>
           <Pressable style={styles.logoutButton} onPress={handleLogout}>
             <Text style={styles.logoutText}>Log Out</Text>
@@ -421,7 +473,6 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    // FIX: Removed maxWidth from here so it fills the sectionContainer
   },
   legalFooter: {
     fontSize: 12,
@@ -490,7 +541,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 16,
     gap: 20,
-    // FIX: Apply iPad constraints here too
     width: "100%",
     maxWidth: 600,
     alignSelf: "center",

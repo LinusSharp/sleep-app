@@ -1,5 +1,3 @@
-// src/screens/LoginScreen.tsx
-
 import React, { useState } from "react";
 import {
   View,
@@ -11,10 +9,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 import { theme } from "../theme";
+
+const EULA_URL =
+  "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
+const PRIVACY_URL = "https://linus-sharp.co.uk/privacy-policy/";
 
 export const LoginScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -51,7 +54,6 @@ export const LoginScreen: React.FC = () => {
         password,
       });
       if (error) {
-        // APPLE TRAP FIX: Handle unverified email gracefully
         if (error.message.includes("Email not confirmed")) {
           Alert.alert(
             "Verification Needed",
@@ -80,7 +82,6 @@ export const LoginScreen: React.FC = () => {
         style={{ flex: 1 }}
       >
         <View style={styles.hero}>
-          {/* Placeholder for your Icon */}
           <View style={styles.iconPlaceholder}>
             <Text style={{ fontSize: 40 }}>☾</Text>
           </View>
@@ -89,7 +90,6 @@ export const LoginScreen: React.FC = () => {
         </View>
 
         <View style={styles.form}>
-          {/* Toggle */}
           <View style={styles.toggleContainer}>
             <Pressable
               style={[
@@ -165,6 +165,27 @@ export const LoginScreen: React.FC = () => {
                 : "Join the League"}
             </Text>
           </Pressable>
+
+          {/* APPLE COMPLIANCE: Guideline 1.2 - EULA Agreement */}
+          {mode === "signup" && (
+            <Text style={styles.legalText}>
+              By joining, you agree to our{" "}
+              <Text
+                style={styles.link}
+                onPress={() => Linking.openURL(EULA_URL)}
+              >
+                Terms of Use (EULA)
+              </Text>{" "}
+              and{" "}
+              <Text
+                style={styles.link}
+                onPress={() => Linking.openURL(PRIVACY_URL)}
+              >
+                Privacy Policy
+              </Text>
+              .
+            </Text>
+          )}
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -212,10 +233,9 @@ const styles = StyleSheet.create({
     padding: 24,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    // ADD THESE 3 LINES FOR IPAD:
     width: "100%",
-    maxWidth: 500, // Prevents it from getting wider than 500px
-    alignSelf: "center", // Centers the box in the middle of the big screen
+    maxWidth: 500,
+    alignSelf: "center",
   },
   toggleContainer: {
     flexDirection: "row",
@@ -275,5 +295,16 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  legalText: {
+    marginTop: 16,
+    textAlign: "center",
+    fontSize: 12,
+    color: theme.colors.textTertiary,
+    lineHeight: 18,
+  },
+  link: {
+    color: theme.colors.primary,
+    fontWeight: "600",
   },
 });

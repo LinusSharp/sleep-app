@@ -376,7 +376,7 @@ export const LeaderboardScreen: React.FC = () => {
               selectedBoard === "tomRemmer" && styles.catTextActive,
             ]}
           >
-            Tom REM-er
+            Top REM-er
           </Text>
         </TouchableOpacity>
 

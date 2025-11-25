@@ -8,12 +8,12 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Image,
   Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 import { theme } from "../theme";
+import { apiPost } from "../api/client"; // <--- Import API Client
 
 const EULA_URL =
   "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
@@ -26,21 +26,6 @@ export const LoginScreen: React.FC = () => {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [loading, setLoading] = useState(false);
 
-  async function resendConfirmation() {
-    setLoading(true);
-    const { error } = await supabase.auth.resend({
-      type: "signup",
-      email: email,
-    });
-    setLoading(false);
-
-    if (error) {
-      Alert.alert("Error", error.message);
-    } else {
-      Alert.alert("Sent", "Check your inbox for the confirmation link.");
-    }
-  }
-
   async function handleAuth() {
     if (!email || !password) {
       Alert.alert("Missing info", "Enter email and password");
@@ -48,31 +33,47 @@ export const LoginScreen: React.FC = () => {
     }
     setLoading(true);
 
-    if (mode === "login") {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) {
-        if (error.message.includes("Email not confirmed")) {
-          Alert.alert(
-            "Verification Needed",
-            "Your email is not verified yet.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Resend Email", onPress: resendConfirmation },
-            ]
-          );
-        } else {
+    try {
+      if (mode === "login") {
+        // --- LOGIN FLOW ---
+        const { error, data } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
           Alert.alert("Login failed", error.message);
+        } else if (data.user) {
+          // Sync profile to DB immediately to prevent 404s
+          try {
+            await apiPost("/me/profile", { email: data.user.email });
+          } catch (e) {
+            console.log("Profile sync warning:", e);
+          }
+        }
+      } else {
+        // --- SIGNUP FLOW ---
+        const { error, data } = await supabase.auth.signUp({ email, password });
+
+        if (error) {
+          Alert.alert("Error", error.message);
+        } else {
+          // Sync profile to DB immediately
+          if (data.user) {
+            try {
+              await apiPost("/me/profile", { email: data.user.email });
+            } catch (e) {
+              console.log("Profile sync warning:", e);
+            }
+          }
+          // No longer alerting "Check Email" - assuming auto-confirm or user preference
         }
       }
-    } else {
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) Alert.alert("Error", error.message);
-      else Alert.alert("Success", "Check your email to confirm account.");
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   return (

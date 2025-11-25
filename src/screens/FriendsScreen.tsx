@@ -42,11 +42,8 @@ type Group = {
 };
 
 // APPLE COMPLIANCE: Enhanced Profanity Filter
-// Normalizes text to catch evasions (e.g. "f.u.c.k", "sh1t", "b!tch")
 function hasProfanity(text: string): boolean {
   if (!text) return false;
-
-  // 1. Normalize Leetspeak
   const normalized = text
     .toLowerCase()
     .replace(/0/g, "o")
@@ -58,8 +55,6 @@ function hasProfanity(text: string): boolean {
     .replace(/\$/g, "s")
     .replace(/!/g, "i");
 
-  // 2. Remove all non-alphabetic characters (spaces, dots, etc)
-  // This catches "s h i t" or "f.u.c.k"
   const cleanText = normalized.replace(/[^a-z]/g, "");
 
   const badWords = [
@@ -80,7 +75,6 @@ function hasProfanity(text: string): boolean {
     "suicide",
   ];
 
-  // Check if any bad word exists inside the cleaned text
   return badWords.some((word) => cleanText.includes(word));
 }
 
@@ -183,6 +177,14 @@ export const FriendsScreen: React.FC = () => {
   async function handleCreateClan() {
     if (!createName.trim()) return Alert.alert("Error", "Enter a clan name");
 
+    // Max Length check
+    if (createName.trim().length > 15) {
+      return Alert.alert(
+        "Name too long",
+        "Clan names must be 15 characters or less."
+      );
+    }
+
     // APPLE COMPLIANCE: Guideline 1.2
     if (hasProfanity(createName)) {
       return Alert.alert(
@@ -282,9 +284,7 @@ export const FriendsScreen: React.FC = () => {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
-        // FIX: Allow buttons to work while keyboard is open
         keyboardShouldPersistTaps="handled"
-        // FIX: Close keyboard when scrolling
         onScrollBeginDrag={Keyboard.dismiss}
         refreshControl={
           <RefreshControl
@@ -293,7 +293,6 @@ export const FriendsScreen: React.FC = () => {
             tintColor={theme.colors.primary}
           />
         }
-        // FIX: Move Static content into Header so everything scrolls
         ListHeaderComponent={
           <>
             <View style={styles.recruitCard}>
@@ -415,7 +414,6 @@ export const FriendsScreen: React.FC = () => {
 
   const renderClanView = () => {
     if (!myGroup) {
-      // Empty State (ScrollView is fine here)
       return (
         <ScrollView
           contentContainerStyle={{ paddingBottom: 40 }}
@@ -491,8 +489,9 @@ export const FriendsScreen: React.FC = () => {
             <View style={styles.inputRow}>
               <TextInput
                 style={styles.input}
-                placeholder="Clan Name"
+                placeholder="Clan Name (max 15)"
                 placeholderTextColor={theme.colors.textTertiary}
+                maxLength={15} // <--- MAX LENGTH HERE
                 value={createName}
                 onChangeText={setCreateName}
               />
@@ -626,8 +625,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     backgroundColor: theme.colors.background,
   },
-
-  // Header
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -645,24 +642,6 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     marginTop: 4,
   },
-  countBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: theme.colors.surfaceHighlight,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  countText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: theme.colors.textPrimary,
-    marginLeft: 6,
-  },
-
-  // Tabs
   tabContainer: {
     flexDirection: "row",
     backgroundColor: theme.colors.surface,
@@ -686,8 +665,6 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: theme.colors.textPrimary,
   },
-
-  // Recruit/Input Card
   recruitCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: 20,
@@ -741,8 +718,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,
   },
-
-  // Friend List
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -802,8 +777,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 20,
   },
-
-  // CLAN VIEWS
   clanEmptyState: {
     justifyContent: "center",
     alignItems: "center",
@@ -833,8 +806,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: 40,
   },
-
-  // Clan Active View
   clanHeaderCard: {
     backgroundColor: theme.colors.surface,
     padding: 20,

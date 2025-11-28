@@ -1,3 +1,5 @@
+// --- START OF FILE MySleepScreen.tsx ---
+
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -14,6 +16,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   Alert,
+  Linking, // <--- Added Linking
 } from "react-native";
 import { apiGet, apiPost } from "../api/client";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -169,16 +172,42 @@ export const MySleepScreen: React.FC = () => {
   async function performHealthSync() {
     setHealthDisclosureVisible(false); // Close modal
     setSyncing(true);
+
     try {
-      await initHealthKit();
+      // 1. Initialize with Timeout Safety
+      // If user closes the permission prompt on iOS without action, it might hang in some library versions.
+      const initPromise = initHealthKit();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("HealthKit initialization timed out")),
+          10000
+        )
+      );
+
+      await Promise.race([initPromise, timeoutPromise]);
+
+      // 2. Fetch Data
       const healthData = await fetchLast7DaysSleep();
 
+      // 3. Handle Missing Data / Permissions Issue
+      // If array is empty, it usually means permissions are Denied or user has no data.
       if (healthData.length === 0) {
-        Alert.alert("No Data", "No sleep records found in Apple Health.");
+        Alert.alert(
+          "No Data Found",
+          "We couldn't find any sleep records. This usually happens if:\n\n1. You haven't tracked sleep.\n2. You denied Health permissions.\n\nTo allow access, open Settings > Health > Data Access > SlumberLeague.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Open Settings",
+              onPress: () => Linking.openSettings(),
+            },
+          ]
+        );
         setSyncing(false);
         return;
       }
 
+      // 4. Upload Data
       let uploadedCount = 0;
       for (const night of healthData) {
         const total = Math.round(night.totalMinutes);
@@ -211,7 +240,12 @@ export const MySleepScreen: React.FC = () => {
       );
     } catch (err: any) {
       console.log("Sync Error:", err);
-      Alert.alert("Sync Error", err.message);
+      // Clean up error message for user
+      const msg = err.message.includes("timed out")
+        ? "Sync timed out. Please check if a permission dialog is open or try again."
+        : err.message;
+
+      Alert.alert("Sync Failed", msg);
     } finally {
       setSyncing(false);
     }

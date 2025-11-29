@@ -53,11 +53,15 @@ export const FriendsScreen: React.FC = () => {
   }, []);
 
   async function handleAddFriend() {
-    if (!friendEmail.trim())
-      return Alert.alert("Missing Info", "Enter an email.");
+    // FIX: Normalize input to handle accidental spaces or caps
+    const rawEmail = friendEmail.trim();
+
+    if (!rawEmail) return Alert.alert("Missing Info", "Enter an email.");
+
     setAddingFriend(true);
     try {
-      await apiPost("/friends/add", { email: friendEmail.trim() });
+      // FIX: Send lowercase email to backend to ensure matching works
+      await apiPost("/friends/add", { email: rawEmail.toLowerCase() });
       setFriendEmail("");
       await loadData();
       Alert.alert("Success", "Friend added.");

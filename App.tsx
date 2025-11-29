@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, View, Alert } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import type { Session } from "@supabase/supabase-js";
@@ -13,9 +13,12 @@ import { MySleepScreen } from "./src/screens/MySleepScreen";
 import { FriendsScreen } from "./src/screens/FriendsScreen";
 import { LeaderboardScreen } from "./src/screens/LeaderboardScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
+import { ClanScreen } from "./src/screens/ClanScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "./src/theme";
-import { ClanScreen } from "./src/screens/ClanScreen"; // Import New Screen
+
+// --- IMPORT API CLIENT FOR FIX ---
+import { apiGet, apiPost } from "./src/api/client";
 
 type RootStackParamList = {
   Auth: undefined;
@@ -98,7 +101,7 @@ function MainTabs() {
       <Tab.Screen
         name="Friends"
         component={FriendsScreen}
-        options={{ title: "Friends" }} // Icon: people
+        options={{ title: "Friends" }}
       />
       <Tab.Screen
         name="Leaderboard"
@@ -108,7 +111,7 @@ function MainTabs() {
       <Tab.Screen
         name="Clan"
         component={ClanScreen}
-        options={{ title: "Clan" }} // Icon: shield
+        options={{ title: "Clan" }}
       />
       <Tab.Screen
         name="Profile"
@@ -119,19 +122,57 @@ function MainTabs() {
   );
 }
 
+// --- GHOST USER FIX: Self-Healing Logic ---
+async function ensureUserExistsInDb(session: Session) {
+  if (!session?.user?.email) return;
+
+  try {
+    // 1. Try to fetch the profile
+    await apiGet("/me/profile");
+    // If successful, the user exists in Postgres. Do nothing.
+  } catch (err) {
+    // 2. If fetch fails (e.g. 404/500), assume the user is missing from DB.
+    console.warn("User auth exists but DB row missing. Repairing...");
+
+    try {
+      // 3. Force creation of the user row
+      await apiPost("/me/profile", { email: session.user.email });
+      console.log("User DB row repaired successfully.");
+    } catch (repairErr) {
+      console.error("Critical: Failed to repair user DB row", repairErr);
+      // Optional: Alert user if critical, or retry later
+    }
+  }
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    // 1. Check Initial Session
+    supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session ?? null);
+
+      if (data.session) {
+        // Run repair logic on boot if logged in
+        await ensureUserExistsInDb(data.session);
+      }
+
       setLoading(false);
     });
 
-    const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-    });
+    // 2. Listen for Auth Changes (Login/Signup events)
+    const { data } = supabase.auth.onAuthStateChange(
+      async (_event, newSession) => {
+        setSession(newSession);
+
+        if (newSession) {
+          // Run repair logic immediately after login/signup
+          await ensureUserExistsInDb(newSession);
+        }
+      }
+    );
 
     return () => {
       data.subscription.unsubscribe();
@@ -154,7 +195,6 @@ export default function App() {
   }
 
   return (
-    // The SafeAreaProvider is crucial for handling the status bar area correctly
     <SafeAreaProvider
       style={{ flex: 1, backgroundColor: theme.colors.background }}
     >

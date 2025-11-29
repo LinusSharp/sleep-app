@@ -24,6 +24,7 @@ type Profile = {
   id: string;
   email: string | null;
   displayName: string | null;
+  badges?: Array<{ id: string; name: string; icon: any; unlocked: boolean }>;
 };
 
 const SUPPORT_EMAIL = "linus.sharp@gmail.com";
@@ -34,11 +35,9 @@ const EULA_URL =
 // --- Helpers ---
 
 // APPLE COMPLIANCE: Enhanced Profanity Filter
-// Normalizes text to catch evasions (e.g. "f.u.c.k", "sh1t", "b!tch")
 function hasProfanity(text: string): boolean {
   if (!text) return false;
 
-  // 1. Normalize Leetspeak
   const normalized = text
     .toLowerCase()
     .replace(/0/g, "o")
@@ -50,8 +49,6 @@ function hasProfanity(text: string): boolean {
     .replace(/\$/g, "s")
     .replace(/!/g, "i");
 
-  // 2. Remove all non-alphabetic characters (spaces, dots, etc)
-  // This catches "s h i t" or "f.u.c.k"
   const cleanText = normalized.replace(/[^a-z]/g, "");
 
   const badWords = [
@@ -72,7 +69,6 @@ function hasProfanity(text: string): boolean {
     "suicide",
   ];
 
-  // Check if any bad word exists inside the cleaned text
   return badWords.some((word) => cleanText.includes(word));
 }
 
@@ -128,7 +124,6 @@ export const ProfileScreen: React.FC = () => {
   async function handleSave() {
     if (!authEmail) return;
 
-    // APPLE COMPLIANCE: Guideline 1.2
     if (displayName && hasProfanity(displayName)) {
       Alert.alert(
         "Invalid Name",
@@ -270,6 +265,40 @@ export const ProfileScreen: React.FC = () => {
           </View>
         </View>
 
+        {/* My Badges Section - FIXED */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>MY BADGES</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+            {profile?.badges?.map((badge: any) => (
+              <View
+                key={badge.id}
+                style={[styles.badgeCard, !badge.unlocked && { opacity: 0.4 }]}
+              >
+                <Ionicons
+                  name={badge.icon}
+                  size={24}
+                  color={
+                    badge.unlocked
+                      ? theme.colors.primary
+                      : theme.colors.textTertiary
+                  }
+                />
+                <Text style={styles.badgeText}>{badge.name}</Text>
+              </View>
+            ))}
+            {(!profile?.badges || profile.badges.length === 0) && (
+              <Text
+                style={{
+                  color: theme.colors.textTertiary,
+                  fontStyle: "italic",
+                }}
+              >
+                No badges earned yet.
+              </Text>
+            )}
+          </View>
+        </View>
+
         {/* Support & Legal */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>SUPPORT</Text>
@@ -392,8 +421,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
-
-  // Header Profile
   headerProfile: {
     alignItems: "center",
     marginBottom: 32,
@@ -450,11 +477,8 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontWeight: "600",
   },
-
-  // Sections
   sectionContainer: {
     marginBottom: 24,
-    // FIX: Apply iPad constraints here to align Title, Card, and Footer
     width: "100%",
     maxWidth: 600,
     alignSelf: "center",
@@ -482,8 +506,6 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     lineHeight: 16,
   },
-
-  // Inputs
   inputGroup: {
     marginBottom: 16,
   },
@@ -503,8 +525,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: theme.colors.textPrimary,
   },
-
-  // Buttons
   saveButton: {
     backgroundColor: theme.colors.primary,
     paddingVertical: 14,
@@ -516,8 +536,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
-
-  // Menu Items
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -535,8 +553,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.border,
     marginVertical: 4,
   },
-
-  // Danger Zone
   dangerZone: {
     alignItems: "center",
     marginTop: 16,
@@ -564,8 +580,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textDecorationLine: "underline",
   },
-
-  // Modal
   modalOverlay: {
     position: "absolute",
     top: 0,
@@ -576,6 +590,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
+  },
+  badgeCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   modalCard: {
     width: "100%",
@@ -620,12 +643,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center",
     borderRadius: 10,
-    backgroundColor: theme.colors.error + "20", // 20% opacity
+    backgroundColor: theme.colors.error + "20",
     borderWidth: 1,
     borderColor: theme.colors.error,
   },
   modalDeleteText: {
     color: theme.colors.error,
     fontWeight: "600",
+  },
+  badgeText: {
+    fontSize: 12,
+    color: theme.colors.textPrimary,
+    marginTop: 4,
+    textAlign: "center",
+    fontWeight: "500",
   },
 });

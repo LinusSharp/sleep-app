@@ -1,3 +1,5 @@
+// --- START OF FILE LeaderboardScreen.tsx ---
+
 import React, { useEffect, useState, useMemo } from "react";
 import {
   View,
@@ -27,16 +29,20 @@ type LeaderboardUser = {
   userId: string;
   displayName: string | null;
   email: string | null;
-  totalSleepMinutes: number;
-  remSleepMinutes: number;
-  deepSleepMinutes: number;
+  points: number; // Weekly Points
+  value: number; // Weekly Raw Minutes
   nightsLogged: number;
 };
 
-type LeaderboardKey = "survivalist" | "tomRemmer" | "rollingInTheDeep";
+type LeaderboardKey =
+  | "survivalist"
+  | "hibernator"
+  | "tomRemmer"
+  | "rollingInTheDeep";
 
 type Leaderboards = {
   survivalist: LeaderboardUser[];
+  hibernator: LeaderboardUser[];
   tomRemmer: LeaderboardUser[];
   rollingInTheDeep: LeaderboardUser[];
 };
@@ -95,19 +101,17 @@ export const LeaderboardScreen: React.FC = () => {
 
   // Data
   const [leaderboards, setLeaderboards] = useState<Leaderboards | null>(null);
-
-  // APPLE COMPLIANCE: Persistent Block List state
   const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
 
   // Controls
   const [scope, setScope] = useState<"friends" | "clan">("friends");
   const [selectedBoard, setSelectedBoard] =
     useState<LeaderboardKey>("survivalist");
+  const [viewMode, setViewMode] = useState<"points" | "time">("points");
   const [infoVisible, setInfoVisible] = useState(false);
 
   // --- Initialization ---
 
-  // 1. Load Local Block List on Mount
   useEffect(() => {
     const loadBlockedUsers = async () => {
       try {
@@ -122,7 +126,6 @@ export const LeaderboardScreen: React.FC = () => {
     loadBlockedUsers();
   }, []);
 
-  // 2. Load API Data when scope changes
   useEffect(() => {
     loadLeaderboard();
   }, [scope]);
@@ -138,13 +141,12 @@ export const LeaderboardScreen: React.FC = () => {
       if (userError || !userData.user) throw new Error("No auth user");
       setMyUserId(userData.user.id);
 
-      // Pass the scope (friends vs clan) to the backend
       const res = await apiGet(`/leaderboard?scope=${scope}`);
-
       const lb = (res.leaderboards || {}) as Partial<Leaderboards>;
 
       setLeaderboards({
         survivalist: lb.survivalist ?? [],
+        hibernator: lb.hibernator ?? [],
         tomRemmer: lb.tomRemmer ?? [],
         rollingInTheDeep: lb.rollingInTheDeep ?? [],
       });
@@ -161,8 +163,6 @@ export const LeaderboardScreen: React.FC = () => {
   const rows = useMemo<LeaderboardUser[]>(() => {
     if (!leaderboards) return [];
     const rawList = leaderboards[selectedBoard] ?? [];
-
-    // APPLE REQUIREMENT: Strict filtering of blocked users
     return rawList.filter((user) => !blockedUsers.includes(user.userId));
   }, [leaderboards, selectedBoard, blockedUsers]);
 
@@ -172,18 +172,13 @@ export const LeaderboardScreen: React.FC = () => {
     if (index === -1) return null;
     const row = rows[index];
 
-    // Determine value based on board
-    let val = 0;
-    if (selectedBoard === "survivalist") val = row.totalSleepMinutes;
-    else if (selectedBoard === "tomRemmer") val = row.remSleepMinutes;
-    else val = row.deepSleepMinutes;
-
     return {
       rank: index + 1,
-      value: minutesToHours(val),
+      points: row.points,
+      value: minutesToHours(row.value),
       nights: row.nightsLogged,
     };
-  }, [rows, myUserId, selectedBoard]);
+  }, [rows, myUserId]);
 
   // --- Actions & Safety ---
 
@@ -191,73 +186,42 @@ export const LeaderboardScreen: React.FC = () => {
     const subject = encodeURIComponent(
       `Report User: ${user.displayName || "Unknown"}`
     );
-    const body = encodeURIComponent(
-      `I would like to report user with ID: ${user.userId}\n\nReason for report:\n`
-    );
+    const body = encodeURIComponent(`Report User ID: ${user.userId}`);
     const url = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
-
     try {
-      const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) {
-        await Linking.openURL(url);
-      } else {
-        throw new Error("No email client");
-      }
+      await Linking.openURL(url);
     } catch (e) {
-      // APPLE COMPLIANCE: Fallback if no mail app installed
       Alert.alert(
-        "Report User",
-        `Please email ${SUPPORT_EMAIL} to report this user.\nUser ID: ${user.userId}`,
-        [{ text: "OK" }]
+        "Report",
+        `Email ${SUPPORT_EMAIL} to report ID: ${user.userId}`
       );
     }
   };
 
   const handleBlockUser = async (userId: string) => {
-    Alert.alert(
-      "Block User",
-      "You will no longer see this user on the leaderboards. This will be saved to your device settings.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Block",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              // 1. Update State immediately
-              const newList = [...blockedUsers, userId];
-              setBlockedUsers(newList);
-
-              // 2. Persist to Storage (Critical for App Review)
-              await AsyncStorage.setItem(
-                BLOCKED_USERS_KEY,
-                JSON.stringify(newList)
-              );
-
-              Alert.alert(
-                "Blocked",
-                "User has been hidden from your leaderboards."
-              );
-            } catch (error) {
-              Alert.alert("Error", "Could not save block preference.");
-            }
-          },
+    Alert.alert("Block User", "Hide this user from leaderboards?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Block",
+        style: "destructive",
+        onPress: async () => {
+          const newList = [...blockedUsers, userId];
+          setBlockedUsers(newList);
+          await AsyncStorage.setItem(
+            BLOCKED_USERS_KEY,
+            JSON.stringify(newList)
+          );
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleRowPress = (user: LeaderboardUser) => {
-    // Don't report yourself
     if (user.userId === myUserId) return;
-
-    Alert.alert(user.displayName || "Unknown Player", "Select an action", [
+    Alert.alert(user.displayName || "Player", "Actions", [
+      { text: "Report", onPress: () => handleReportUser(user) },
       {
-        text: "Report Content",
-        onPress: () => handleReportUser(user),
-      },
-      {
-        text: "Block User",
+        text: "Block",
         style: "destructive",
         onPress: () => handleBlockUser(user.userId),
       },
@@ -272,7 +236,7 @@ export const LeaderboardScreen: React.FC = () => {
       <View style={styles.headerTop}>
         <View>
           <Text style={styles.title}>Leaderboard</Text>
-          <Text style={styles.subtitle}>Weekly Competition (Mon-Sun)</Text>
+          <Text style={styles.subtitle}>Daily Scoring (Mon-Sun)</Text>
         </View>
         <TouchableOpacity
           onPress={() => setInfoVisible(true)}
@@ -286,37 +250,56 @@ export const LeaderboardScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Scope Switcher */}
-      <View style={styles.scopeContainer}>
-        <Pressable
-          style={[
-            styles.scopeBtn,
-            scope === "friends" && styles.scopeBtnActive,
-          ]}
-          onPress={() => setScope("friends")}
-        >
-          <Text
+      {/* Scope Switcher & View Toggle */}
+      <View style={styles.controlsRow}>
+        <View style={styles.scopeContainer}>
+          <Pressable
             style={[
-              styles.scopeText,
-              scope === "friends" && styles.scopeTextActive,
+              styles.scopeBtn,
+              scope === "friends" && styles.scopeBtnActive,
             ]}
+            onPress={() => setScope("friends")}
           >
-            Friends
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.scopeBtn, scope === "clan" && styles.scopeBtnActive]}
-          onPress={() => setScope("clan")}
+            <Text
+              style={[
+                styles.scopeText,
+                scope === "friends" && styles.scopeTextActive,
+              ]}
+            >
+              Friends
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.scopeBtn, scope === "clan" && styles.scopeBtnActive]}
+            onPress={() => setScope("clan")}
+          >
+            <Text
+              style={[
+                styles.scopeText,
+                scope === "clan" && styles.scopeTextActive,
+              ]}
+            >
+              Clan
+            </Text>
+          </Pressable>
+        </View>
+
+        <TouchableOpacity
+          style={styles.toggleBtn}
+          onPress={() =>
+            setViewMode((prev) => (prev === "points" ? "time" : "points"))
+          }
         >
-          <Text
-            style={[
-              styles.scopeText,
-              scope === "clan" && styles.scopeTextActive,
-            ]}
-          >
-            Clan
+          <Text style={styles.toggleText}>
+            {viewMode === "points" ? "PTS" : "TIME"}
           </Text>
-        </Pressable>
+          <Ionicons
+            name="swap-horizontal"
+            size={14}
+            color={theme.colors.primary}
+            style={{ marginLeft: 4 }}
+          />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -328,83 +311,34 @@ export const LeaderboardScreen: React.FC = () => {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.catContainer}
       >
-        <TouchableOpacity
-          style={[
-            styles.catCard,
-            selectedBoard === "survivalist" && styles.catCardActive,
-          ]}
-          onPress={() => setSelectedBoard("survivalist")}
-        >
-          <Ionicons
-            name="battery-charging-outline"
-            size={18}
-            color={
-              selectedBoard === "survivalist"
-                ? "#FFF"
-                : theme.colors.textSecondary
-            }
-          />
-          <Text
-            style={[
-              styles.catText,
-              selectedBoard === "survivalist" && styles.catTextActive,
-            ]}
-          >
-            Survivalist
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.catCard,
-            selectedBoard === "tomRemmer" && styles.catCardActive,
-          ]}
-          onPress={() => setSelectedBoard("tomRemmer")}
-        >
-          <Ionicons
-            name="flash-outline"
-            size={18}
-            color={
-              selectedBoard === "tomRemmer"
-                ? "#FFF"
-                : theme.colors.textSecondary
-            }
-          />
-          <Text
-            style={[
-              styles.catText,
-              selectedBoard === "tomRemmer" && styles.catTextActive,
-            ]}
-          >
-            Top REM-er
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.catCard,
-            selectedBoard === "rollingInTheDeep" && styles.catCardActive,
-          ]}
-          onPress={() => setSelectedBoard("rollingInTheDeep")}
-        >
-          <Ionicons
-            name="bed-outline"
-            size={18}
-            color={
-              selectedBoard === "rollingInTheDeep"
-                ? "#FFF"
-                : theme.colors.textSecondary
-            }
-          />
-          <Text
-            style={[
-              styles.catText,
-              selectedBoard === "rollingInTheDeep" && styles.catTextActive,
-            ]}
-          >
-            Rolling Deep
-          </Text>
-        </TouchableOpacity>
+        <CategoryCard
+          id="survivalist"
+          icon="battery-charging-outline"
+          label="Survivalist"
+          selected={selectedBoard}
+          onPress={setSelectedBoard}
+        />
+        <CategoryCard
+          id="hibernator"
+          icon="snow-outline"
+          label="Hibernator"
+          selected={selectedBoard}
+          onPress={setSelectedBoard}
+        />
+        <CategoryCard
+          id="tomRemmer"
+          icon="flash-outline"
+          label="Top REM-er"
+          selected={selectedBoard}
+          onPress={setSelectedBoard}
+        />
+        <CategoryCard
+          id="rollingInTheDeep"
+          icon="bed-outline"
+          label="Rolling Deep"
+          selected={selectedBoard}
+          onPress={setSelectedBoard}
+        />
       </ScrollView>
     </View>
   );
@@ -440,13 +374,22 @@ export const LeaderboardScreen: React.FC = () => {
           <View style={{ marginLeft: 16 }}>
             <Text style={styles.myRankName}>You</Text>
             <Text style={styles.myRankSub}>
-              {myRowInfo.nights} nights logged
+              {myRowInfo.nights}/7 days logged
             </Text>
           </View>
         </View>
-        <View>
-          <Text style={styles.myRankValue}>{myRowInfo.value}h</Text>
-          <Text style={styles.myRankUnit}>Total</Text>
+        <View style={{ alignItems: "flex-end" }}>
+          {viewMode === "points" ? (
+            <>
+              <Text style={styles.myRankValue}>{myRowInfo.points}</Text>
+              <Text style={styles.myRankUnit}>Points</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.myRankValue}>{myRowInfo.value}h</Text>
+              <Text style={styles.myRankUnit}>Total Time</Text>
+            </>
+          )}
         </View>
       </View>
     );
@@ -478,14 +421,8 @@ export const LeaderboardScreen: React.FC = () => {
         ListHeaderComponent={renderMyRank}
         renderItem={({ item, index }) => {
           const isMe = item.userId === myUserId;
-          const name = item.displayName || item.email || "Unknown";
           const rank = index + 1;
           const style = getRankStyle(rank);
-
-          let value = 0;
-          if (selectedBoard === "survivalist") value = item.totalSleepMinutes;
-          else if (selectedBoard === "tomRemmer") value = item.remSleepMinutes;
-          else value = item.deepSleepMinutes;
 
           return (
             <TouchableOpacity
@@ -527,25 +464,25 @@ export const LeaderboardScreen: React.FC = () => {
                       isMe && { color: theme.colors.primary },
                     ]}
                   >
-                    {name} {isMe && "(You)"}
+                    {item.displayName || "Unknown"} {isMe && "(You)"}
                   </Text>
-                  {rank === 1 && (
-                    <View style={styles.crownBadge}>
-                      <Ionicons
-                        name="trophy"
-                        size={10}
-                        color={theme.colors.accent}
-                      />
-                      <Text style={styles.crownText}>LEADER</Text>
-                    </View>
-                  )}
+                  <Text style={styles.rowSubText}>
+                    {item.nightsLogged}/7 days
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.rowRight}>
-                <Text style={styles.rowValue}>
-                  {minutesToHours(value)} <Text style={styles.rowUnit}>h</Text>
-                </Text>
+                {viewMode === "points" ? (
+                  <Text style={styles.rowValue}>
+                    {item.points} <Text style={styles.rowUnit}>pts</Text>
+                  </Text>
+                ) : (
+                  <Text style={styles.rowValue}>
+                    {minutesToHours(item.value)}{" "}
+                    <Text style={styles.rowUnit}>h</Text>
+                  </Text>
+                )}
               </View>
             </TouchableOpacity>
           );
@@ -558,11 +495,9 @@ export const LeaderboardScreen: React.FC = () => {
                 size={48}
                 color={theme.colors.textTertiary}
               />
-              <Text style={styles.emptyText}>No data found.</Text>
+              <Text style={styles.emptyText}>No data available.</Text>
               <Text style={styles.emptySubText}>
-                {scope === "clan"
-                  ? "You might not be in a clan, or no one has slept yet."
-                  : "Add friends or log sleep to see rankings."}
+                Points are awarded daily.{"\n"}1st: 3pts, 2nd: 2pts, 3rd: 1pt.
               </Text>
               {scope === "clan" && (
                 <TouchableOpacity
@@ -586,77 +521,52 @@ export const LeaderboardScreen: React.FC = () => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>How it Works</Text>
-              <TouchableOpacity onPress={() => setInfoVisible(false)}>
-                <Ionicons
-                  name="close"
-                  size={24}
-                  color={theme.colors.textSecondary}
-                />
-              </TouchableOpacity>
+            <Text style={styles.modalTitle}>Daily Scoring System</Text>
+            <Text style={styles.infoRowDesc}>
+              This is a daily competition. Every night, players are ranked in
+              each category.
+            </Text>
+            <View style={{ marginVertical: 12 }}>
+              <Text style={styles.ruleText}>
+                🥇 1st Place:{" "}
+                <Text style={{ fontWeight: "700", color: "#FFF" }}>
+                  3 Points
+                </Text>
+              </Text>
+              <Text style={styles.ruleText}>
+                🥈 2nd Place:{" "}
+                <Text style={{ fontWeight: "700", color: "#FFF" }}>
+                  2 Points
+                </Text>
+              </Text>
+              <Text style={styles.ruleText}>
+                🥉 3rd Place:{" "}
+                <Text style={{ fontWeight: "700", color: "#FFF" }}>
+                  1 Point
+                </Text>
+              </Text>
             </View>
+            <Text style={styles.infoRowDesc}>
+              Points are summed up over the week (Mon-Sun) to determine the
+              weekly champion.
+            </Text>
 
-            <ScrollView style={{ maxHeight: 400 }}>
-              <Text style={styles.modalSectionTitle}>Categories</Text>
+            <View style={styles.divider} />
 
-              <View style={styles.infoRow}>
-                <Ionicons
-                  name="battery-charging-outline"
-                  size={20}
-                  color={theme.colors.primary}
-                />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.infoRowTitle}>Survivalist</Text>
-                  <Text style={styles.infoRowDesc}>
-                    Whoever functions on the LEAST amount of sleep. Total
-                    duration sorted ascending.
-                  </Text>
-                </View>
+            <Text style={styles.modalSectionTitle}>New Category</Text>
+            <View style={styles.infoRow}>
+              <Ionicons
+                name="snow-outline"
+                size={20}
+                color={theme.colors.primary}
+              />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.infoRowTitle}>The Hibernator</Text>
+                <Text style={styles.infoRowDesc}>
+                  For the heavy sleepers. Most Total Sleep duration wins.
+                </Text>
               </View>
-
-              <View style={styles.infoRow}>
-                <Ionicons
-                  name="flash-outline"
-                  size={20}
-                  color={theme.colors.primary}
-                />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.infoRowTitle}>Tom REM-er</Text>
-                  <Text style={styles.infoRowDesc}>
-                    Who has the most vivid dreams? Total REM sleep sorted
-                    descending.
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.infoRow}>
-                <Ionicons
-                  name="bed-outline"
-                  size={20}
-                  color={theme.colors.primary}
-                />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.infoRowTitle}>Rolling in the Deep</Text>
-                  <Text style={styles.infoRowDesc}>
-                    Physical recovery king. Total Deep sleep sorted descending.
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.divider} />
-
-              <Text style={styles.modalSectionTitle}>Rules & Safety</Text>
-              <Text style={styles.ruleText}>
-                • Competition runs Monday to Sunday.
-              </Text>
-              <Text style={styles.ruleText}>
-                • Offensive names will result in a ban.
-              </Text>
-              <Text style={styles.ruleText}>
-                • You can tap any player to Report or Block them.
-              </Text>
-            </ScrollView>
+            </View>
 
             <Pressable
               style={styles.modalCloseBtn}
@@ -671,17 +581,29 @@ export const LeaderboardScreen: React.FC = () => {
   );
 };
 
+const CategoryCard = ({ id, icon, label, selected, onPress }: any) => (
+  <TouchableOpacity
+    style={[styles.catCard, selected === id && styles.catCardActive]}
+    onPress={() => onPress(id)}
+  >
+    <Ionicons
+      name={icon}
+      size={18}
+      color={selected === id ? "#FFF" : theme.colors.textSecondary}
+    />
+    <Text style={[styles.catText, selected === id && styles.catTextActive]}>
+      {label}
+    </Text>
+  </TouchableOpacity>
+);
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 24,
     backgroundColor: theme.colors.background,
   },
-
-  // Header
-  headerContainer: {
-    marginBottom: 12,
-  },
+  headerContainer: { marginBottom: 12 },
   headerTop: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -694,17 +616,12 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     letterSpacing: -0.5,
   },
-  subtitle: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  infoButton: {
-    padding: 4,
-  },
+  subtitle: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 2 },
+  infoButton: { padding: 4 },
 
-  // Scope Switcher
+  controlsRow: { flexDirection: "row", gap: 12 },
   scopeContainer: {
+    flex: 1,
     flexDirection: "row",
     backgroundColor: theme.colors.surface,
     borderRadius: 12,
@@ -716,27 +633,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 8,
   },
-  scopeBtnActive: {
-    backgroundColor: theme.colors.surfaceHighlight,
-  },
+  scopeBtnActive: { backgroundColor: theme.colors.surfaceHighlight },
   scopeText: {
     fontSize: 13,
     fontWeight: "600",
     color: theme.colors.textSecondary,
   },
-  scopeTextActive: {
-    color: theme.colors.textPrimary,
-  },
+  scopeTextActive: { color: theme.colors.textPrimary },
 
-  // Categories
-  catScroll: {
-    marginBottom: 16,
-    marginHorizontal: -24, // break container padding
+  toggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
-  catContainer: {
-    paddingHorizontal: 24,
-    gap: 10,
-  },
+  toggleText: { fontSize: 12, fontWeight: "700", color: theme.colors.primary },
+
+  catScroll: { marginBottom: 16, marginHorizontal: -24 },
+  catContainer: { paddingHorizontal: 24, gap: 10 },
   catCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -757,11 +674,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: theme.colors.textSecondary,
   },
-  catTextActive: {
-    color: "#FFFFFF",
-  },
+  catTextActive: { color: "#FFFFFF" },
 
-  // My Rank
   myRankCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: 16,
@@ -775,32 +689,21 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 10,
   },
-  myRankLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  myRankBadge: {
-    alignItems: "center",
-  },
+  myRankLeft: { flexDirection: "row", alignItems: "center" },
+  myRankBadge: { alignItems: "center" },
   myRankLabel: {
     fontSize: 10,
     fontWeight: "700",
     color: theme.colors.textTertiary,
     marginBottom: 2,
   },
-  myRankBig: {
-    fontSize: 24,
-    fontWeight: "800",
-  },
+  myRankBig: { fontSize: 24, fontWeight: "800" },
   myRankName: {
     fontSize: 16,
     fontWeight: "700",
     color: theme.colors.textPrimary,
   },
-  myRankSub: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-  },
+  myRankSub: { fontSize: 12, color: theme.colors.textSecondary },
   myRankValue: {
     fontSize: 20,
     fontWeight: "700",
@@ -813,7 +716,6 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
 
-  // List Item
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -824,11 +726,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
   },
-  rowLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
+  rowLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
   rankBadge: {
     width: 28,
     height: 28,
@@ -837,29 +735,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
-  rankText: {
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  rowName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.textPrimary,
-  },
-  crownBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 2,
-  },
+  rankText: { fontSize: 14, fontWeight: "800" },
+  rowName: { fontSize: 15, fontWeight: "600", color: theme.colors.textPrimary },
+  rowSubText: { fontSize: 11, color: theme.colors.textTertiary },
+  crownBadge: { flexDirection: "row", alignItems: "center", marginTop: 2 },
   crownText: {
     fontSize: 10,
     fontWeight: "700",
     color: theme.colors.accent,
     marginLeft: 4,
   },
-  rowRight: {
-    alignItems: "flex-end",
-  },
+  rowRight: { alignItems: "flex-end" },
   rowValue: {
     fontSize: 16,
     fontWeight: "700",
@@ -871,12 +757,7 @@ const styles = StyleSheet.create({
     color: theme.colors.textTertiary,
   },
 
-  // Empty State
-  emptyContainer: {
-    alignItems: "center",
-    marginTop: 40,
-    padding: 20,
-  },
+  emptyContainer: { alignItems: "center", marginTop: 40, padding: 20 },
   emptyText: {
     fontSize: 16,
     fontWeight: "600",
@@ -888,6 +769,7 @@ const styles = StyleSheet.create({
     color: theme.colors.textTertiary,
     marginTop: 4,
     textAlign: "center",
+    lineHeight: 20,
   },
   joinClanBtn: {
     marginTop: 16,
@@ -896,12 +778,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 999,
   },
-  joinClanText: {
-    color: theme.colors.primary,
-    fontWeight: "600",
-  },
+  joinClanText: { color: theme.colors.primary, fontWeight: "600" },
 
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.8)",
@@ -936,10 +814,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 12,
   },
-  infoRow: {
-    flexDirection: "row",
-    marginBottom: 16,
-  },
+  infoRow: { flexDirection: "row", marginBottom: 16 },
   infoRowTitle: {
     fontSize: 14,
     fontWeight: "700",
@@ -957,7 +832,7 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   ruleText: {
-    fontSize: 13,
+    fontSize: 14,
     color: theme.colors.textSecondary,
     marginBottom: 8,
   },
@@ -968,14 +843,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 16,
   },
-  modalCloseText: {
-    color: "#FFF",
-    fontWeight: "700",
-    fontSize: 15,
-  },
-  error: {
-    color: theme.colors.error,
-    marginBottom: 10,
-    textAlign: "center",
-  },
+  modalCloseText: { color: "#FFF", fontWeight: "700", fontSize: 15 },
 });

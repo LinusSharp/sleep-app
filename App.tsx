@@ -15,6 +15,7 @@ import { LeaderboardScreen } from "./src/screens/LeaderboardScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "./src/theme";
+import { ClanScreen } from "./src/screens/ClanScreen"; // Import New Screen
 
 type RootStackParamList = {
   Auth: undefined;
@@ -69,6 +70,9 @@ function MainTabs() {
           } else {
             iconName = focused ? "person" : "person-outline";
           }
+          if (route.name === "Clan") {
+            iconName = focused ? "shield" : "shield-outline";
+          }
 
           return (
             <View
@@ -92,14 +96,19 @@ function MainTabs() {
         options={{ title: "Sleep" }}
       />
       <Tab.Screen
+        name="Friends"
+        component={FriendsScreen}
+        options={{ title: "Friends" }} // Icon: people
+      />
+      <Tab.Screen
         name="Leaderboard"
         component={LeaderboardScreen}
         options={{ title: "League" }}
       />
       <Tab.Screen
-        name="Friends"
-        component={FriendsScreen}
-        options={{ title: "Friends" }}
+        name="Clan"
+        component={ClanScreen}
+        options={{ title: "Clan" }} // Icon: shield
       />
       <Tab.Screen
         name="Profile"

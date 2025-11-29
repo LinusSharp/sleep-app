@@ -1,3 +1,5 @@
+// --- START OF FILE FriendsScreen.tsx ---
+
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -13,14 +15,11 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { apiGet, apiPost } from "../api/client";
 import { theme } from "../theme";
 import { Ionicons } from "@expo/vector-icons";
-
-// --- Types ---
 
 type Friend = {
   id: string;
@@ -28,96 +27,20 @@ type Friend = {
   displayName: string | null;
 };
 
-type GroupMember = {
-  id: string;
-  displayName: string | null;
-  email: string | null;
-};
-
-type Group = {
-  id: string;
-  name: string;
-  code: string;
-  members: GroupMember[];
-};
-
-// APPLE COMPLIANCE: Enhanced Profanity Filter
-function hasProfanity(text: string): boolean {
-  if (!text) return false;
-  const normalized = text
-    .toLowerCase()
-    .replace(/0/g, "o")
-    .replace(/1/g, "i")
-    .replace(/3/g, "e")
-    .replace(/4/g, "a")
-    .replace(/5/g, "s")
-    .replace(/@/g, "a")
-    .replace(/\$/g, "s")
-    .replace(/!/g, "i");
-
-  const cleanText = normalized.replace(/[^a-z]/g, "");
-
-  const badWords = [
-    "admin",
-    "staff",
-    "mod",
-    "fuck",
-    "shit",
-    "bitch",
-    "ass",
-    "cunt",
-    "dick",
-    "pussy",
-    "whore",
-    "fag",
-    "nigger",
-    "kill",
-    "suicide",
-  ];
-
-  return badWords.some((word) => cleanText.includes(word));
-}
-
-// --- Component ---
-
 export const FriendsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-
-  // Tabs: 'friends' | 'clan'
-  const [activeTab, setActiveTab] = useState<"friends" | "clan">("friends");
-
-  // Friends State
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendEmail, setFriendEmail] = useState("");
   const [search, setSearch] = useState("");
   const [addingFriend, setAddingFriend] = useState(false);
-
-  // Clan State
-  const [myGroup, setMyGroup] = useState<Group | null>(null);
-
-  // Split inputs for better UX
-  const [joinCode, setJoinCode] = useState("");
-  const [createName, setCreateName] = useState("");
-
-  const [joiningClan, setJoiningClan] = useState(false);
-  const [creatingClan, setCreatingClan] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
-
-  // General
   const [loading, setLoading] = useState(false);
-
-  // --- Logic ---
 
   async function loadData() {
     setLoading(true);
     try {
-      if (activeTab === "friends") {
-        const res = await apiGet("/friends");
-        setFriends(res.friends ?? []);
-      } else {
-        const res = await apiGet("/groups/me");
-        setMyGroup(res.group);
-      }
+      const res = await apiGet("/friends");
+      setFriends(res.friends ?? []);
     } catch (err: any) {
       console.log(err);
     } finally {
@@ -127,14 +50,11 @@ export const FriendsScreen: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [activeTab]);
-
-  // --- Friend Actions ---
+  }, []);
 
   async function handleAddFriend() {
-    if (!friendEmail.trim()) {
+    if (!friendEmail.trim())
       return Alert.alert("Missing Info", "Enter an email.");
-    }
     setAddingFriend(true);
     try {
       await apiPost("/friends/add", { email: friendEmail.trim() });
@@ -149,15 +69,18 @@ export const FriendsScreen: React.FC = () => {
   }
 
   function confirmRemoveFriend(friend: Friend) {
-    const name = friend.displayName || friend.email || "this player";
-    Alert.alert("Remove Friend", `Are you sure you want to remove ${name}?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: () => handleRemoveFriend(friend.id),
-      },
-    ]);
+    Alert.alert(
+      "Remove Friend",
+      `Remove ${friend.displayName || friend.email}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => handleRemoveFriend(friend.id),
+        },
+      ]
+    );
   }
 
   async function handleRemoveFriend(friendId: string) {
@@ -172,71 +95,6 @@ export const FriendsScreen: React.FC = () => {
     }
   }
 
-  // --- Clan Actions ---
-
-  async function handleCreateClan() {
-    if (!createName.trim()) return Alert.alert("Error", "Enter a clan name");
-
-    // Max Length check
-    if (createName.trim().length > 15) {
-      return Alert.alert(
-        "Name too long",
-        "Clan names must be 15 characters or less."
-      );
-    }
-
-    // APPLE COMPLIANCE: Guideline 1.2
-    if (hasProfanity(createName)) {
-      return Alert.alert(
-        "Invalid Name",
-        "Please choose a different clan name. Profanity is not allowed."
-      );
-    }
-
-    setCreatingClan(true);
-    try {
-      await apiPost("/groups/create", { name: createName.trim() });
-      setCreateName("");
-      await loadData();
-    } catch (err: any) {
-      Alert.alert("Error", err.message);
-    } finally {
-      setCreatingClan(false);
-    }
-  }
-
-  async function handleJoinClan() {
-    if (!joinCode.trim()) return Alert.alert("Error", "Enter a clan code");
-    setJoiningClan(true);
-    try {
-      await apiPost("/groups/join", { code: joinCode.trim().toUpperCase() });
-      setJoinCode("");
-      await loadData();
-    } catch (err: any) {
-      Alert.alert("Error", err.message);
-    } finally {
-      setJoiningClan(false);
-    }
-  }
-
-  async function handleLeaveClan() {
-    Alert.alert("Leave Clan", "Are you sure you want to leave?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Leave",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await apiPost("/groups/leave", {});
-            setMyGroup(null);
-          } catch (err: any) {
-            Alert.alert("Error", err.message);
-          }
-        },
-      },
-    ]);
-  }
-
   const filteredFriends = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return friends;
@@ -247,138 +105,104 @@ export const FriendsScreen: React.FC = () => {
     );
   }, [friends, search]);
 
-  // --- Renders ---
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1 }}
+    >
+      <View style={[styles.container, { paddingTop: 12 + insets.top }]}>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.title}>Friends</Text>
+            <Text style={styles.subtitle}>Your network</Text>
+          </View>
+        </View>
 
-  const renderHeaderTabs = () => (
-    <View style={styles.tabContainer}>
-      <Pressable
-        style={[styles.tab, activeTab === "friends" && styles.tabActive]}
-        onPress={() => setActiveTab("friends")}
-      >
-        <Text
-          style={[
-            styles.tabText,
-            activeTab === "friends" && styles.tabTextActive,
-          ]}
-        >
-          Friends
-        </Text>
-      </Pressable>
-      <Pressable
-        style={[styles.tab, activeTab === "clan" && styles.tabActive]}
-        onPress={() => setActiveTab("clan")}
-      >
-        <Text
-          style={[styles.tabText, activeTab === "clan" && styles.tabTextActive]}
-        >
-          Clan
-        </Text>
-      </Pressable>
-    </View>
-  );
-
-  const renderFriendsView = () => (
-    <View style={{ flex: 1 }}>
-      <FlatList
-        data={filteredFriends}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        onScrollBeginDrag={Keyboard.dismiss}
-        refreshControl={
-          <RefreshControl
-            refreshing={loading}
-            onRefresh={loadData}
-            tintColor={theme.colors.primary}
-          />
-        }
-        ListHeaderComponent={
-          <>
-            <View style={styles.recruitCard}>
-              <View style={styles.recruitHeader}>
+        <FlatList
+          data={filteredFriends}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingBottom: 100 }}
+          keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={Keyboard.dismiss}
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={loadData}
+              tintColor={theme.colors.primary}
+            />
+          }
+          ListHeaderComponent={
+            <>
+              <View style={styles.recruitCard}>
+                <View style={styles.recruitHeader}>
+                  <Ionicons
+                    name="person-add"
+                    size={20}
+                    color={theme.colors.primary}
+                  />
+                  <Text style={styles.cardTitle}>Add Friend</Text>
+                </View>
+                <View style={styles.inputRow}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="friend@email.com"
+                    placeholderTextColor={theme.colors.textTertiary}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    value={friendEmail}
+                    onChangeText={setFriendEmail}
+                  />
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.addButton,
+                      pressed && { opacity: 0.8 },
+                    ]}
+                    onPress={handleAddFriend}
+                    disabled={addingFriend}
+                  >
+                    {addingFriend ? (
+                      <ActivityIndicator color="#FFF" size="small" />
+                    ) : (
+                      <Ionicons name="arrow-forward" size={20} color="#FFF" />
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+              <View style={styles.searchContainer}>
                 <Ionicons
-                  name="person-add"
-                  size={20}
-                  color={theme.colors.primary}
+                  name="search"
+                  size={16}
+                  color={theme.colors.textTertiary}
+                  style={{ marginRight: 8 }}
                 />
-                <Text style={styles.cardTitle}>Add Friend</Text>
-              </View>
-              <Text style={styles.cardSubtitle}>
-                Enter their email to add them to your list.
-              </Text>
-
-              <View style={styles.inputRow}>
                 <TextInput
-                  style={styles.input}
-                  placeholder="friend@example.com"
+                  style={styles.searchInput}
+                  placeholder="Search friends..."
                   placeholderTextColor={theme.colors.textTertiary}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  value={friendEmail}
-                  onChangeText={setFriendEmail}
+                  value={search}
+                  onChangeText={setSearch}
                 />
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.addButton,
-                    addingFriend && { opacity: 0.7 },
-                    pressed && { opacity: 0.9 },
-                  ]}
-                  onPress={handleAddFriend}
-                  disabled={addingFriend}
-                >
-                  {addingFriend ? (
-                    <ActivityIndicator color="#FFF" size="small" />
-                  ) : (
-                    <Ionicons name="arrow-forward" size={20} color="#FFF" />
-                  )}
-                </Pressable>
               </View>
-            </View>
-
-            <View style={styles.searchContainer}>
-              <Ionicons
-                name="search"
-                size={16}
-                color={theme.colors.textTertiary}
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search friends..."
-                placeholderTextColor={theme.colors.textTertiary}
-                value={search}
-                onChangeText={setSearch}
-              />
-            </View>
-          </>
-        }
-        renderItem={({ item }) => {
-          const isRemoving = removingId === item.id;
-          return (
+            </>
+          }
+          renderItem={({ item }) => (
             <View style={styles.row}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>
-                  {(
-                    item.displayName?.[0] ||
-                    item.email?.[0] ||
-                    "?"
-                  ).toUpperCase()}
+                  {(item.displayName?.[0] || "?").toUpperCase()}
                 </Text>
               </View>
               <View style={styles.rowContent}>
-                <Text style={styles.rowName} numberOfLines={1}>
+                <Text style={styles.rowName}>
                   {item.displayName || "Unknown"}
                 </Text>
-                <Text style={styles.rowSub} numberOfLines={1}>
-                  {item.email}
-                </Text>
+                <Text style={styles.rowSub}>{item.email}</Text>
               </View>
               <TouchableOpacity
                 onPress={() => confirmRemoveFriend(item)}
-                disabled={isRemoving}
+                disabled={removingId === item.id}
               >
-                {isRemoving ? (
+                {removingId === item.id ? (
                   <ActivityIndicator size="small" color={theme.colors.error} />
                 ) : (
                   <Ionicons
@@ -389,231 +213,13 @@ export const FriendsScreen: React.FC = () => {
                 )}
               </TouchableOpacity>
             </View>
-          );
-        }}
-        ListEmptyComponent={
-          !loading ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons
-                name="people-outline"
-                size={48}
-                color={theme.colors.textTertiary}
-              />
-              <Text style={styles.emptyText}>No friends added yet.</Text>
-              {!search && (
-                <Text style={styles.emptySubText}>
-                  Add someone above to get started.
-                </Text>
-              )}
-            </View>
-          ) : null
-        }
-      />
-    </View>
-  );
-
-  const renderClanView = () => {
-    if (!myGroup) {
-      return (
-        <ScrollView
-          contentContainerStyle={{ paddingBottom: 40 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={loading}
-              onRefresh={loadData}
-              tintColor={theme.colors.primary}
-            />
-          }
-        >
-          <View style={styles.clanEmptyState}>
-            <View style={styles.clanIconBig}>
-              <Ionicons
-                name="shield-outline"
-                size={48}
-                color={theme.colors.primary}
-              />
-            </View>
-            <Text style={styles.clanEmptyTitle}>Find Your Clan</Text>
-            <Text style={styles.clanEmptySub}>
-              Join a team to compete on the group leaderboard.
-            </Text>
-          </View>
-
-          {/* Join Section */}
-          <View style={styles.recruitCard}>
-            <View style={styles.recruitHeader}>
-              <Ionicons
-                name="enter-outline"
-                size={20}
-                color={theme.colors.primary}
-              />
-              <Text style={styles.cardTitle}>Join a Clan</Text>
-            </View>
-            <Text style={styles.cardSubtitle}>Have a code? Enter it here.</Text>
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter 8-digit code"
-                placeholderTextColor={theme.colors.textTertiary}
-                autoCapitalize="characters"
-                value={joinCode}
-                onChangeText={setJoinCode}
-              />
-              <Pressable
-                style={[styles.addButton, joiningClan && { opacity: 0.7 }]}
-                onPress={handleJoinClan}
-                disabled={joiningClan}
-              >
-                {joiningClan ? (
-                  <ActivityIndicator color="#FFF" size="small" />
-                ) : (
-                  <Ionicons name="arrow-forward" size={20} color="#FFF" />
-                )}
-              </Pressable>
-            </View>
-          </View>
-
-          {/* Create Section */}
-          <View style={styles.recruitCard}>
-            <View style={styles.recruitHeader}>
-              <Ionicons
-                name="add-circle-outline"
-                size={20}
-                color={theme.colors.accent}
-              />
-              <Text style={styles.cardTitle}>Create New Clan</Text>
-            </View>
-            <Text style={styles.cardSubtitle}>
-              Start your own group and invite friends.
-            </Text>
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.input}
-                placeholder="Clan Name (max 15)"
-                placeholderTextColor={theme.colors.textTertiary}
-                maxLength={15} // <--- MAX LENGTH HERE
-                value={createName}
-                onChangeText={setCreateName}
-              />
-              <Pressable
-                style={[
-                  styles.addButton,
-                  { backgroundColor: theme.colors.accent },
-                  creatingClan && { opacity: 0.7 },
-                ]}
-                onPress={handleCreateClan}
-                disabled={creatingClan}
-              >
-                {creatingClan ? (
-                  <ActivityIndicator color="#FFF" size="small" />
-                ) : (
-                  <Ionicons name="checkmark" size={20} color="#FFF" />
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </ScrollView>
-      );
-    }
-
-    // Joined State
-    return (
-      <View style={{ flex: 1 }}>
-        <FlatList
-          data={myGroup.members}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          keyboardShouldPersistTaps="handled"
-          refreshControl={
-            <RefreshControl
-              refreshing={loading}
-              onRefresh={loadData}
-              tintColor={theme.colors.primary}
-            />
-          }
-          // FIX: Move header into list so it scrolls nicely
-          ListHeaderComponent={
-            <>
-              <View style={styles.clanHeaderCard}>
-                <View style={styles.clanBanner}>
-                  <View style={styles.clanBadge}>
-                    <Ionicons
-                      name="shield"
-                      size={28}
-                      color={theme.colors.background}
-                    />
-                  </View>
-                  <View style={{ marginLeft: 16, flex: 1 }}>
-                    <Text style={styles.clanName}>{myGroup.name}</Text>
-                    <Text style={styles.clanCount}>
-                      {myGroup.members.length} Members
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Code Display */}
-                <View style={styles.codeContainer}>
-                  <Text style={styles.codeLabel}>INVITE CODE:</Text>
-                  <Text style={styles.codeValue}>{myGroup.code}</Text>
-                </View>
-
-                <Pressable style={styles.leaveBtn} onPress={handleLeaveClan}>
-                  <Ionicons
-                    name="log-out-outline"
-                    size={20}
-                    color={theme.colors.error}
-                  />
-                </Pressable>
-              </View>
-              <Text style={styles.sectionTitle}>MEMBERS</Text>
-            </>
-          }
-          renderItem={({ item }) => (
-            <View style={styles.row}>
-              <View
-                style={[styles.avatar, { borderColor: theme.colors.accent }]}
-              >
-                <Text
-                  style={[styles.avatarText, { color: theme.colors.accent }]}
-                >
-                  {(
-                    item.displayName?.[0] ||
-                    item.email?.[0] ||
-                    "?"
-                  ).toUpperCase()}
-                </Text>
-              </View>
-              <View style={styles.rowContent}>
-                <Text style={styles.rowName}>
-                  {item.displayName || "Unknown"}
-                </Text>
-                <Text style={styles.rowSub}>{item.email}</Text>
-              </View>
-            </View>
           )}
+          ListEmptyComponent={
+            !loading ? (
+              <Text style={styles.emptyText}>No friends yet.</Text>
+            ) : null
+          }
         />
-      </View>
-    );
-  };
-
-  return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1 }}
-    >
-      <View style={[styles.container, { paddingTop: 12 + insets.top }]}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.title}>Social</Text>
-            <Text style={styles.subtitle}>Manage your network</Text>
-          </View>
-        </View>
-
-        {renderHeaderTabs()}
-
-        <View style={{ flex: 1, marginTop: 16 }}>
-          {activeTab === "friends" ? renderFriendsView() : renderClanView()}
-        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -631,40 +237,8 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: 20,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: theme.colors.textPrimary,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginTop: 4,
-  },
-  tabContainer: {
-    flexDirection: "row",
-    backgroundColor: theme.colors.surface,
-    padding: 4,
-    borderRadius: 12,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: "center",
-    borderRadius: 8,
-  },
-  tabActive: {
-    backgroundColor: theme.colors.surfaceHighlight,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.textSecondary,
-  },
-  tabTextActive: {
-    color: theme.colors.textPrimary,
-  },
+  title: { fontSize: 28, fontWeight: "800", color: theme.colors.textPrimary },
+  subtitle: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 4 },
   recruitCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: 20,
@@ -684,16 +258,7 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     marginLeft: 8,
   },
-  cardSubtitle: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    marginBottom: 16,
-    lineHeight: 18,
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  inputRow: { flexDirection: "row", alignItems: "center" },
   input: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -713,10 +278,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: theme.colors.primary,
-    shadowOpacity: 0.4,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 8,
   },
   searchContainer: {
     flexDirection: "row",
@@ -728,7 +289,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 16,
   },
-  searchIcon: { marginRight: 8 },
   searchInput: {
     flex: 1,
     paddingVertical: 12,
@@ -753,139 +313,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginRight: 14,
-    borderWidth: 1,
-    borderColor: theme.colors.primary,
   },
-  avatarText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: theme.colors.primary,
-  },
+  avatarText: { fontSize: 16, fontWeight: "700", color: theme.colors.primary },
   rowContent: { flex: 1 },
-  rowName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: theme.colors.textPrimary,
-  },
-  rowSub: {
-    fontSize: 12,
-    color: theme.colors.textTertiary,
-    marginTop: 2,
-  },
+  rowName: { fontSize: 15, fontWeight: "700", color: theme.colors.textPrimary },
+  rowSub: { fontSize: 12, color: theme.colors.textTertiary, marginTop: 2 },
   emptyText: {
     color: theme.colors.textSecondary,
     textAlign: "center",
     marginTop: 20,
-  },
-  clanEmptyState: {
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 20,
-    marginBottom: 32,
-  },
-  clanIconBig: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: theme.colors.surface,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  clanEmptyTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: theme.colors.textPrimary,
-    marginBottom: 8,
-  },
-  clanEmptySub: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    textAlign: "center",
-    paddingHorizontal: 40,
-  },
-  clanHeaderCard: {
-    backgroundColor: theme.colors.surface,
-    padding: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: theme.colors.primary,
-    marginBottom: 24,
-    shadowColor: theme.colors.primary,
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-  },
-  clanBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  clanBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: theme.colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  clanName: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: theme.colors.textPrimary,
-  },
-  clanCount: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  codeContainer: {
-    backgroundColor: theme.colors.surfaceHighlight,
-    padding: 12,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  codeLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: theme.colors.textTertiary,
-  },
-  codeValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: theme.colors.accent,
-    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-    letterSpacing: 1,
-  },
-  leaveBtn: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    padding: 10,
-    backgroundColor: theme.colors.surfaceHighlight,
-    borderRadius: 10,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: theme.colors.textTertiary,
-    marginBottom: 12,
-    marginLeft: 8,
-    letterSpacing: 1,
-  },
-  emptyContainer: {
-    alignItems: "center",
-    marginTop: 40,
-    padding: 20,
-  },
-  emptySubText: {
-    fontSize: 14,
-    color: theme.colors.textTertiary,
-    marginTop: 4,
-    textAlign: "center",
   },
 });

@@ -11,9 +11,10 @@ import {
   Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // <--- Import
 import { supabase } from "../lib/supabase";
 import { theme } from "../theme";
-import { apiPost } from "../api/client"; // <--- Import API Client
+import { apiPost } from "../api/client";
 
 const EULA_URL =
   "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
@@ -44,7 +45,9 @@ export const LoginScreen: React.FC = () => {
         if (error) {
           Alert.alert("Login failed", error.message);
         } else if (data.user) {
-          // Sync profile to DB immediately to prevent 404s
+          // --- FLAG FOR ONBOARDING ---
+          await AsyncStorage.setItem("JUST_LOGGED_IN", "true");
+
           try {
             await apiPost("/me/profile", { email: data.user.email });
           } catch (e) {
@@ -58,15 +61,15 @@ export const LoginScreen: React.FC = () => {
         if (error) {
           Alert.alert("Error", error.message);
         } else {
-          // Sync profile to DB immediately
+          // --- FLAG FOR ONBOARDING ---
           if (data.user) {
+            await AsyncStorage.setItem("JUST_LOGGED_IN", "true");
             try {
               await apiPost("/me/profile", { email: data.user.email });
             } catch (e) {
               console.log("Profile sync warning:", e);
             }
           }
-          // No longer alerting "Check Email" - assuming auto-confirm or user preference
         }
       }
     } catch (err: any) {

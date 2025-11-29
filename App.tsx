@@ -2,9 +2,10 @@ import React, { useEffect, useState } from "react";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { ActivityIndicator, View, Alert } from "react-native";
+import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // <--- Import
 import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "./src/lib/supabase";
@@ -14,15 +15,15 @@ import { FriendsScreen } from "./src/screens/FriendsScreen";
 import { LeaderboardScreen } from "./src/screens/LeaderboardScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { ClanScreen } from "./src/screens/ClanScreen";
+import { OnboardingScreen } from "./src/screens/OnboardingScreen"; // <--- Import
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "./src/theme";
-
-// --- IMPORT API CLIENT FOR FIX ---
 import { apiGet, apiPost } from "./src/api/client";
 
 type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
+  Onboarding: undefined; // <--- Add Onboarding
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -129,18 +130,14 @@ async function ensureUserExistsInDb(session: Session) {
   try {
     // 1. Try to fetch the profile
     await apiGet("/me/profile");
-    // If successful, the user exists in Postgres. Do nothing.
   } catch (err) {
-    // 2. If fetch fails (e.g. 404/500), assume the user is missing from DB.
     console.warn("User auth exists but DB row missing. Repairing...");
-
     try {
       // 3. Force creation of the user row
       await apiPost("/me/profile", { email: session.user.email });
       console.log("User DB row repaired successfully.");
     } catch (repairErr) {
       console.error("Critical: Failed to repair user DB row", repairErr);
-      // Optional: Alert user if critical, or retry later
     }
   }
 }
@@ -148,6 +145,13 @@ async function ensureUserExistsInDb(session: Session) {
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Helper to finish onboarding
+  const completeOnboarding = async () => {
+    await AsyncStorage.removeItem("JUST_LOGGED_IN");
+    setShowOnboarding(false);
+  };
 
   useEffect(() => {
     // 1. Check Initial Session
@@ -155,8 +159,12 @@ export default function App() {
       setSession(data.session ?? null);
 
       if (data.session) {
-        // Run repair logic on boot if logged in
         await ensureUserExistsInDb(data.session);
+        // Check if we just logged in manually
+        const justLoggedIn = await AsyncStorage.getItem("JUST_LOGGED_IN");
+        if (justLoggedIn === "true") {
+          setShowOnboarding(true);
+        }
       }
 
       setLoading(false);
@@ -168,8 +176,13 @@ export default function App() {
         setSession(newSession);
 
         if (newSession) {
-          // Run repair logic immediately after login/signup
           await ensureUserExistsInDb(newSession);
+
+          // Re-check flag on auth change
+          const justLoggedIn = await AsyncStorage.getItem("JUST_LOGGED_IN");
+          if (justLoggedIn === "true") {
+            setShowOnboarding(true);
+          }
         }
       }
     );
@@ -202,7 +215,17 @@ export default function App() {
         <StatusBar style="light" backgroundColor={theme.colors.background} />
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {session ? (
-            <Stack.Screen name="Main" component={MainTabs} />
+            showOnboarding ? (
+              // Show Onboarding if flag is set
+              <Stack.Screen name="Onboarding">
+                {(props) => (
+                  <OnboardingScreen {...props} onFinish={completeOnboarding} />
+                )}
+              </Stack.Screen>
+            ) : (
+              // Otherwise show main app
+              <Stack.Screen name="Main" component={MainTabs} />
+            )
           ) : (
             <Stack.Screen name="Auth">{() => <LoginScreen />}</Stack.Screen>
           )}

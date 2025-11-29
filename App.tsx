@@ -153,32 +153,56 @@ export default function App() {
     setShowOnboarding(false);
   };
 
+  // In App.tsx
+
   useEffect(() => {
     // 1. Check Initial Session
-    supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session ?? null);
+    const checkSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
 
-      if (data.session) {
-        await ensureUserExistsInDb(data.session);
-        // Check if we just logged in manually
-        const justLoggedIn = await AsyncStorage.getItem("JUST_LOGGED_IN");
-        if (justLoggedIn === "true") {
-          setShowOnboarding(true);
+        // If there is a critical auth error (like invalid token), throw it so we catch it below
+        if (error) throw error;
+
+        setSession(data.session ?? null);
+
+        if (data.session) {
+          await ensureUserExistsInDb(data.session);
+
+          const justLoggedIn = await AsyncStorage.getItem("JUST_LOGGED_IN");
+          if (justLoggedIn === "true") {
+            setShowOnboarding(true);
+          }
         }
+      } catch (err) {
+        // --- CRITICAL FIX ---
+        // If the token is invalid, we MUST sign out to clear the bad data from storage
+        console.log("Session error, logging out:", err);
+        await supabase.auth.signOut();
+        setSession(null);
+      } finally {
+        // This runs whether it succeeds OR fails, ensuring the spinner always stops
+        setLoading(false);
       }
+    };
 
-      setLoading(false);
-    });
+    checkSession();
 
-    // 2. Listen for Auth Changes (Login/Signup events)
+    // 2. Listen for Auth Changes
     const { data } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
+      async (event, newSession) => {
+        // Handle the specific "TOKEN_REFRESHED" or "SIGNED_OUT" events if needed
+        if (event === "TOKEN_REFRESHED") {
+          await supabase.auth.signOut();
+          setSession(null);
+          return;
+        }
+
         setSession(newSession);
 
         if (newSession) {
           await ensureUserExistsInDb(newSession);
 
-          // Re-check flag on auth change
           const justLoggedIn = await AsyncStorage.getItem("JUST_LOGGED_IN");
           if (justLoggedIn === "true") {
             setShowOnboarding(true);

@@ -5,7 +5,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import AsyncStorage from "@react-native-async-storage/async-storage"; // <--- Import
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "./src/lib/supabase";
@@ -15,7 +15,7 @@ import { FriendsScreen } from "./src/screens/FriendsScreen";
 import { LeaderboardScreen } from "./src/screens/LeaderboardScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { ClanScreen } from "./src/screens/ClanScreen";
-import { OnboardingScreen } from "./src/screens/OnboardingScreen"; // <--- Import
+import { OnboardingScreen } from "./src/screens/OnboardingScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "./src/theme";
 import { apiGet, apiPost } from "./src/api/client";
@@ -23,13 +23,12 @@ import { apiGet, apiPost } from "./src/api/client";
 type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
-  Onboarding: undefined; // <--- Add Onboarding
+  Onboarding: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
 
-// Custom Navigation Theme
 const NavTheme = {
   ...DarkTheme,
   colors: {
@@ -57,37 +56,21 @@ function MainTabs() {
           height: 80,
           paddingTop: 8,
         },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "600",
-          marginBottom: 8,
-        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "600", marginBottom: 8 },
         tabBarIcon: ({ color, size, focused }) => {
           let iconName: keyof typeof Ionicons.glyphMap;
-
-          if (route.name === "MySleep") {
+          if (route.name === "MySleep")
             iconName = focused ? "moon" : "moon-outline";
-          } else if (route.name === "Friends") {
+          else if (route.name === "Friends")
             iconName = focused ? "people" : "people-outline";
-          } else if (route.name === "Leaderboard") {
+          else if (route.name === "Leaderboard")
             iconName = focused ? "trophy" : "trophy-outline";
-          } else {
-            iconName = focused ? "person" : "person-outline";
-          }
-          if (route.name === "Clan") {
+          else if (route.name === "Clan")
             iconName = focused ? "shield" : "shield-outline";
-          }
+          else iconName = focused ? "person" : "person-outline";
 
           return (
-            <View
-              style={{
-                alignItems: "center",
-                justifyContent: "center",
-                shadowColor: focused ? theme.colors.primary : "transparent",
-                shadowOpacity: 0.5,
-                shadowRadius: 10,
-              }}
-            >
+            <View style={{ alignItems: "center", justifyContent: "center" }}>
               <Ionicons name={iconName} size={size} color={color} />
             </View>
           );
@@ -123,17 +106,14 @@ function MainTabs() {
   );
 }
 
-// --- GHOST USER FIX: Self-Healing Logic ---
+// Self-Healing Logic (Run in background)
 async function ensureUserExistsInDb(session: Session) {
   if (!session?.user?.email) return;
-
   try {
-    // 1. Try to fetch the profile
     await apiGet("/me/profile");
   } catch (err) {
     console.warn("User auth exists but DB row missing. Repairing...");
     try {
-      // 3. Force creation of the user row
       await apiPost("/me/profile", { email: session.user.email });
       console.log("User DB row repaired successfully.");
     } catch (repairErr) {
@@ -147,72 +127,74 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // Helper to finish onboarding
   const completeOnboarding = async () => {
     await AsyncStorage.removeItem("JUST_LOGGED_IN");
     setShowOnboarding(false);
   };
 
-  // In App.tsx
-
   useEffect(() => {
-    // 1. Check Initial Session
-    const checkSession = async () => {
-      try {
-        const { data, error } = await supabase.auth.getSession();
+    let mounted = true;
 
-        // If there is a critical auth error (like invalid token), throw it so we catch it below
+    const initializeApp = async () => {
+      try {
+        // 1. Get Supabase Session
+        const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
 
-        setSession(data.session ?? null);
+        if (mounted) {
+          setSession(data.session);
 
-        if (data.session) {
-          await ensureUserExistsInDb(data.session);
+          if (data.session) {
+            // 2. Check Onboarding Flag (Fast, wait for this)
+            const justLoggedIn = await AsyncStorage.getItem("JUST_LOGGED_IN");
+            if (justLoggedIn === "true") {
+              setShowOnboarding(true);
+            }
 
-          const justLoggedIn = await AsyncStorage.getItem("JUST_LOGGED_IN");
-          if (justLoggedIn === "true") {
-            setShowOnboarding(true);
+            // 3. Check DB Integrity (Slow, run in background - DO NOT AWAIT)
+            ensureUserExistsInDb(data.session);
           }
         }
       } catch (err) {
-        // --- CRITICAL FIX ---
-        // If the token is invalid, we MUST sign out to clear the bad data from storage
-        console.log("Session error, logging out:", err);
-        await supabase.auth.signOut();
-        setSession(null);
+        console.log("Session Check Error:", err);
+        // If critical auth error, ensure we are logged out
+        if (mounted) {
+          setSession(null);
+          await supabase.auth.signOut();
+        }
       } finally {
-        // This runs whether it succeeds OR fails, ensuring the spinner always stops
-        setLoading(false);
+        // 4. Always stop loading
+        if (mounted) setLoading(false);
       }
     };
 
-    checkSession();
+    initializeApp();
 
-    // 2. Listen for Auth Changes
-    const { data } = supabase.auth.onAuthStateChange(
+    // 5. Auth Listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
-        // Handle the specific "TOKEN_REFRESHED" or "SIGNED_OUT" events if needed
-        if (event === "TOKEN_REFRESHED") {
-          await supabase.auth.signOut();
+        console.log("Auth Event:", event);
+
+        // FIX: Removed the invalid "TOKEN_REFRESHED_NOT_POSSIBLE" string
+        if (event === "SIGNED_OUT") {
           setSession(null);
-          return;
-        }
+          setLoading(false); // Ensure loading stops if we get kicked out
+        } else if (newSession) {
+          setSession(newSession);
 
-        setSession(newSession);
-
-        if (newSession) {
-          await ensureUserExistsInDb(newSession);
-
-          const justLoggedIn = await AsyncStorage.getItem("JUST_LOGGED_IN");
-          if (justLoggedIn === "true") {
-            setShowOnboarding(true);
+          // Re-check onboarding on login events
+          if (event === "SIGNED_IN") {
+            const justLoggedIn = await AsyncStorage.getItem("JUST_LOGGED_IN");
+            if (justLoggedIn === "true") setShowOnboarding(true);
+            ensureUserExistsInDb(newSession);
           }
         }
       }
     );
 
     return () => {
-      data.subscription.unsubscribe();
+      mounted = false;
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
@@ -240,14 +222,12 @@ export default function App() {
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {session ? (
             showOnboarding ? (
-              // Show Onboarding if flag is set
               <Stack.Screen name="Onboarding">
                 {(props) => (
                   <OnboardingScreen {...props} onFinish={completeOnboarding} />
                 )}
               </Stack.Screen>
             ) : (
-              // Otherwise show main app
               <Stack.Screen name="Main" component={MainTabs} />
             )
           ) : (
